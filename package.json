@@ -1,0 +1,36 @@
+{
+  "name": "vipo-eletronica",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "typecheck": "nuxt typecheck",
+    "postinstall": "nuxt prepare",
+    "db:migrate": "node --env-file=.env scripts/migrate.ts",
+    "admin:create": "node --env-file=.env scripts/create-admin.ts"
+  },
+  "dependencies": {
+    "@adonisjs/hash": "^10.1.1",
+    "@libsql/client": "^0.17.4",
+    "@nuxt/ui": "4.13.1",
+    "drizzle-orm": "^0.45.4",
+    "h3": "^1.15.11",
+    "nuxt": "4.6.4",
+    "nuxt-auth-utils": "^0.5.34",
+    "sanitize-html": "^2.18.2",
+    "tailwindcss": "4",
+    "vue": "^3.5.46",
+    "vue-router": "5.5.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@iconify-json/lucide": "^1.2.158",
+    "@nuxtjs/critters": "^0.10.1",
+    "@types/bun": "^1.4.5",
+    "@types/sanitize-html": "^2.16.2",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.14"
+  }
+}

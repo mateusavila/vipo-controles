@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@theme {
+  --spacing-almost-full-mobile: calc(100% - 20px);
+
+  --breakpoint-xs: 25rem;
+}

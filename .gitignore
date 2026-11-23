@@ -1,0 +1,5 @@
+.env
+node_modules/
+.nuxt/
+acesso-evania.txt
+.data/kv/

@@ -1,0 +1,24 @@
+.admin-shell {
+  --admin-green: #08754e;
+  --ui-primary: var(--ui-color-primary-700);
+  --admin-border: #d8dde1;
+  color: #202524;
+  font: 1rem/1.5 system-ui, sans-serif;
+}
+body:has(.admin-shell) { background: #f8faf9; }
+.admin-shell * { box-sizing: border-box; }
+.admin-case-link, .admin-header > a, .admin-main > a { color: #086345; }
+.admin-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem max(1rem, calc((100% - 76rem) / 2)); background: white; border-bottom: 1px solid var(--admin-border); }
+.admin-header > a { font-weight: 700; text-decoration: none; }
+.admin-main { width: min(76rem, calc(100% - 2rem)); margin: 2.5rem auto; }
+.admin-main > h1, .admin-login h1 { margin: 0 0 1rem; line-height: 1.2; }
+.admin-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.admin-shell button:disabled { cursor: default; opacity: .55; }
+.admin-shell :focus-visible { outline: 2px solid var(--admin-green); outline-offset: 2px; }
+.admin-panel { display: grid; gap: .85rem; background: white; border: 1px solid var(--admin-border); border-radius: .75rem; padding: 1rem; min-width: 0; }
+.admin-panel label { display: grid; gap: .2rem; }
+.admin-image-row { display: grid; grid-template-columns: repeat(var(--columns), minmax(12rem, 1fr)); gap: 1rem; overflow-x: auto; margin-bottom: .5rem; }
+.admin-grid-preview { display: flex; gap: 1rem; overflow: auto; scroll-snap-type: x mandatory; }
+.admin-grid-preview img { flex: 0 0 85%; width: 85%; max-height: 16rem; object-fit: contain; scroll-snap-align: start; }
+.admin-login { display: grid; place-items: center; min-height: 100vh; padding: 1rem; }
+.admin-login form { width: min(100%, 28rem); padding: 1.5rem; }
