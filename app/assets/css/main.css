@@ -1,8 +1,19 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+@font-face {
+  font-family: 'Open Sans';
+  src: url('../fonts/open-sans-custom-full-normal.woff2')
+    format('woff2');
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+
 @theme {
   --spacing-almost-full-mobile: calc(100% - 20px);
+
+  --font-open: 'Open Sans', sans-serif;
 
   --breakpoint-xs: 25rem;
 }

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { blob, check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { blob, check, index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 export const remoteControls = sqliteTable('remote_controls', {
   id: text('id').primaryKey().notNull().$defaultFn(() => crypto.randomUUID()),
@@ -11,6 +11,7 @@ export const remoteControls = sqliteTable('remote_controls', {
   photoBytes: blob('photo_bytes', { mode: 'buffer' }),
   photoMime: text('photo_mime'),
   notes: text('notes'),
+  models: text('models', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
 }, table => [
   check('remote_controls_category_check', sql`${table.category} IN ('tv', 'ac')`),
@@ -21,17 +22,13 @@ export const brands = sqliteTable('brands', {
   name: text('name').notNull().unique(),
 })
 
-export const remoteCompatibilities = sqliteTable('remote_compatibilities', {
-  id: text('id').primaryKey().notNull().$defaultFn(() => crypto.randomUUID()),
+export const remoteControlBrands = sqliteTable('remote_control_brands', {
   remoteControlId: text('remote_control_id').notNull()
     .references(() => remoteControls.id, { onDelete: 'cascade' }),
   brandId: text('brand_id').notNull().references(() => brands.id, { onDelete: 'restrict' }),
-  model: text('model').notNull(),
 }, table => [
-  uniqueIndex('remote_compatibilities_control_brand_id_model_unique')
-    .on(table.remoteControlId, table.brandId, table.model),
-  index('remote_compatibilities_brand_id_model_idx').on(table.brandId, table.model),
-  index('remote_compatibilities_model_idx').on(table.model),
+  primaryKey({ columns: [table.remoteControlId, table.brandId] }),
+  index('remote_control_brands_brand_id_idx').on(table.brandId),
 ])
 
 export const searchTerms = sqliteTable('search_terms', {

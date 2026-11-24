@@ -9,10 +9,8 @@ export const remoteFields = z.object({
   originalRemoteCode: z.string().trim().max(80),
   notes: z.string().trim().max(2000),
   active: z.boolean(),
-  compatibilities: z.array(z.object({
-    brandId: z.uuid({ error: 'Selecione a marca.' }),
-    model: z.string().trim().min(1, 'Informe o modelo ou a linha.').max(140),
-  })).max(100),
+  brandIds: z.array(z.uuid({ error: 'Selecione uma marca válida.' })).max(100),
+  models: z.array(z.string().trim().min(1, 'Informe o modelo ou a linha.').max(140)).max(100),
 })
 
 export type RemoteFields = z.input<typeof remoteFields>

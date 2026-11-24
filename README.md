@@ -17,7 +17,7 @@ npm run admin:create
 npm run dev
 ```
 
-Remova a senha de seed do ambiente após criar as contas. Acesse `/login` para entrar no painel. O cadastro e a edição de controles são feitos em `/admin/controles`. Gerencie as marcas em `/admin/marcas`. Em bancos existentes, `db:migrate` cadastra as marcas que antes eram texto e preserva os vínculos com os aparelhos.
+Remova a senha de seed do ambiente após criar as contas. Acesse `/login` para entrar no painel. O cadastro e a edição de controles são feitos em `/admin/controles`. Gerencie as marcas em `/admin/marcas`. Em bancos existentes, `db:migrate` separa os pares antigos em listas independentes de marcas e modelos de cada controle.
 
 ## APIs
 
@@ -35,6 +35,6 @@ Remova a senha de seed do ambiente após criar as contas. Acesse `/login` para e
 | PUT, DELETE | `/api/admin/brands/:id` | Renomear ou apagar marca sem vínculos |
 | GET | `/api/admin/dashboard` | Rankings por controle e por termo |
 
-As listagens aceitam `page`, `pageSize`, `name`, `brand`, `brandId`, `model`, `vipoCode` e `q`. O código Vipo é um filtro exato. O parâmetro `q` procura por nome, código Vipo, código original, marca, modelo, categoria e observações. Para listar os controles de uma marca pelo ID, use `/api/controls?brandId=<id>`. Cada compatibilidade retorna `{ brand: { id, name }, model }` e é gravada como `{ brandId, model }`. A API retorna `{ items, total, page, pageSize }`. As escritas recebem os campos do controle, a lista completa de compatibilidades e, opcionalmente, `photo` em Base64 puro. Omitir `photo` mantém a imagem atual. Enviar `photo: null` remove a foto. Os bytes e o MIME ficam no próprio registro do controle.
+As listagens aceitam `page`, `pageSize`, `name`, `brand`, `brandId`, `model`, `vipoCode` e `q`. O código Vipo é um filtro exato. O parâmetro `q` procura por nome, código Vipo, código original, marca, modelo, categoria e observações. Para listar os controles de uma marca pelo ID, use `/api/controls?brandId=<id>`. Cada controle retorna `brands: { id, name }[]` e `models: string[]`. Envie `brandIds: string[]` e `models: string[]` ao cadastrar ou editar. As listas são independentes e podem estar vazias. A API retorna `{ items, total, page, pageSize }`. As escritas recebem os campos do controle, as duas listas completas e, opcionalmente, `photo` em Base64 puro. Omitir `photo` mantém a imagem atual. Enviar `photo: null` remove a foto. Os bytes e o MIME ficam no próprio registro do controle.
 
 Quando o visitante confirmar uma busca, envie `GET /api/controls?q=Sony%20Bravia&track=1`. Use `track=1` só no envio confirmado. Paginação, carregamento inicial, autocomplete e requisições repetidas devem omitir o parâmetro. Somente a primeira página registra buscas com termo ou filtros. O ranking conta uma ocorrência por busca para cada controle correspondente, incluindo os das demais páginas. Os termos são consolidados por caixa e espaços. Termos sem retorno entram no ranking de termos e no contador de buscas sem resultado.

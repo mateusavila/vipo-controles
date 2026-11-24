@@ -29,7 +29,7 @@ const showDelete = ref(false)
 const form = reactive<RemoteFields>(emptyForm())
 
 function emptyForm(): RemoteFields {
-  return { name: '', vipoCode: '', category: 'tv', originalRemoteCode: '', notes: '', active: true, compatibilities: [] }
+  return { name: '', vipoCode: '', category: 'tv', originalRemoteCode: '', notes: '', active: true, brandIds: [], models: [] }
 }
 
 function applyFilters() {
@@ -77,7 +77,8 @@ async function editControl(id: string) {
       originalRemoteCode: control.originalRemoteCode ?? '',
       notes: control.notes ?? '',
       active: control.active,
-      compatibilities: control.compatibilities.map(item => ({ brandId: item.brand.id, model: item.model })),
+      brandIds: control.brands.map(brand => brand.id),
+      models: [...control.models],
     })
   } catch (error) {
     actionError.value = errorMessage(error, 'Não foi possível abrir o controle.')
@@ -161,12 +162,15 @@ async function deleteSelected() {
     </div>
 
     <form class="admin-panel" @submit.prevent="applyFilters">
-      <UFormField label="Buscar controles">
-        <UInput v-model="search" class="w-full" type="search" maxlength="160" placeholder="Nome, marca, modelo ou código" />
-      </UFormField>
-      <div class="flex gap-2">
+      <div class="flex items-stretch gap-2">
+        <UInput v-model="search" class="min-w-0 flex-1" maxlength="160" aria-label="Buscar controles"
+          placeholder="Nome, marca, modelo ou código">
+          <template #trailing>
+            <UButton v-if="search || appliedSearch" type="button" icon="i-lucide-x" size="xs"
+              color="neutral" variant="ghost" aria-label="Limpar busca" @click="resetFilters" />
+          </template>
+        </UInput>
         <UButton type="submit" icon="i-lucide-search">Buscar</UButton>
-        <UButton type="button" color="neutral" variant="ghost" @click="resetFilters">Limpar</UButton>
       </div>
     </form>
 
@@ -181,24 +185,37 @@ async function deleteSelected() {
         <table class="w-full text-left text-sm">
           <thead>
             <tr>
-              <th class="p-2">Código Vipo</th><th class="p-2">Nome</th><th class="p-2">Categoria</th>
-              <th class="p-2">Aparelhos compatíveis</th><th class="p-2">Status</th><th class="p-2">Ações</th>
+              <th scope="col" class="whitespace-nowrap p-2"># Vipo</th>
+              <th scope="col" class="p-2">Nome</th>
+              <th scope="col" class="p-2">Aparelhos compatíveis</th>
+              <th scope="col" class="p-2 text-end">Ações</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in data.items" :key="item.id" class="border-t border-default">
               <td class="p-2">{{ item.vipoCode }}</td>
-              <td class="p-2 font-medium">{{ item.name }}</td>
-              <td class="p-2">{{ item.category === 'tv' ? 'TV' : 'Ar-condicionado' }}</td>
-              <td class="p-2">
-                {{ item.compatibilities.map(model => [model.brand.name, model.model].join(' ')).join(', ') || '—' }}
-              </td>
-              <td class="p-2"><UBadge :color="item.active ? 'success' : 'neutral'" variant="soft">{{ item.active ? 'Ativo' : 'Inativo' }}</UBadge></td>
-              <td class="p-2">
-                <div class="flex gap-1">
-                  <UButton size="sm" variant="ghost" :disabled="loadingEditor" @click="editControl(item.id)">Editar</UButton>
-                  <UButton size="sm" variant="ghost" color="error" :disabled="loadingEditor" @click="askDelete(item)">Apagar</UButton>
+              <td class="min-w-44 p-2">
+                <div class="flex items-center gap-2">
+                  <UIcon :name="item.active ? 'i-lucide-check' : 'i-lucide-minus'" aria-hidden="true"
+                    class="size-4 shrink-0" :class="item.active ? 'text-success' : 'text-muted'" />
+                  <span class="sr-only">{{ item.active ? 'Ativo' : 'Inativo' }}</span>
+                  <IconCategory :item />
+                  <button type="button" class="cursor-pointer rounded text-start font-medium hover:underline"
+                    :disabled="loadingEditor" @click="editControl(item.id)">{{ item.name }}</button>
                 </div>
+              </td>
+              <td class="p-2">
+                <div>{{ item.brands.map(brand => brand.name).join(', ') || '—' }}</div>
+                <div v-if="item.models.length" class="text-muted">{{ item.models.join(', ') }}</div>
+              </td>
+              <td class="p-2 text-end">
+                <UDropdownMenu :modal="false" :items="[
+                  { label: 'Editar', icon: 'i-lucide-pencil', onSelect: () => editControl(item.id) },
+                  { label: 'Apagar', icon: 'i-lucide-trash-2', color: 'error', onSelect: () => askDelete(item) },
+                ]" :content="{ align: 'end' }">
+                  <UButton type="button" icon="i-lucide-ellipsis-vertical" color="neutral" variant="ghost"
+                    :aria-label="`Ações de ${item.name}`" :disabled="loadingEditor" />
+                </UDropdownMenu>
               </td>
             </tr>
           </tbody>
@@ -207,53 +224,63 @@ async function deleteSelected() {
       <UPagination v-if="data && data.total > pageSize" v-model:page="page" :total="data.total" :items-per-page="pageSize" />
     </section>
 
-    <UModal v-model:open="showEditor" :title="editingId ? 'Editar controle' : 'Novo controle'" :dismissible="!saving" :close="!saving">
+    <UModal v-model:open="showEditor" :title="editingId ? 'Editar controle' : 'Novo controle'" :dismissible="!saving" :close="!saving" :ui="{ content: 'max-w-4xl' }">
       <template #body>
         <form class="space-y-4" @submit.prevent="save">
-          <fieldset :disabled="saving" class="space-y-4">
-            <UFormField label="Nome" required>
-              <UInput v-model="form.name" class="w-full" maxlength="160" required />
-            </UFormField>
-            <div class="grid gap-3 sm:grid-cols-2">
-              <UFormField label="Código Vipo" required>
-                <UInput v-model="form.vipoCode" class="w-full" maxlength="60" required />
+          <fieldset :disabled="saving" class="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+            <div class="w-full min-w-0 max-w-72 md:max-w-none">
+              <UFormField label="Foto">
+                <div v-if="photoUrl && !removePhoto && !file" class="mb-2 space-y-2">
+                  <img :src="photoUrl" alt="Foto atual do controle" class="aspect-[3/4] w-full rounded-lg bg-elevated object-contain" />
+                  <UButton type="button" size="sm" color="neutral" variant="ghost" @click="void (removePhoto = true)">Remover foto atual</UButton>
+                </div>
+                <UButton v-if="removePhoto && !file" type="button" size="sm" color="neutral" variant="ghost" @click="void (removePhoto = false)">Manter foto atual</UButton>
+                <UFileUpload v-model="file" accept="image/jpeg,image/png,image/webp,image/avif"
+                  :label="photoUrl ? 'Escolher nova foto' : 'Escolher foto'"
+                  description="JPG, PNG, WebP ou AVIF de até 750 KiB" layout="grid" class="w-full"
+                  :ui="{ base: photoUrl && !removePhoto && !file ? '' : 'aspect-[3/4]', fileLeadingAvatar: '[&_img]:object-contain' }" />
               </UFormField>
-              <UFormField label="Categoria" required>
-                <USelect v-model="form.category" :items="categories" class="w-full" />
-              </UFormField>
+
             </div>
-
-            <UFormField label="Código do controle original">
-              <UInput v-model="form.originalRemoteCode" class="w-full" maxlength="80" />
-            </UFormField>
-            <section class="space-y-2" aria-label="Aparelhos compatíveis">
-              <h3 class="text-sm font-semibold">Aparelhos compatíveis</h3>
-              <div v-if="brandsError" class="flex flex-wrap items-center gap-2">
-                <p class="text-sm text-error">Não foi possível carregar as marcas.</p>
-                <UButton type="button" size="sm" variant="ghost" @click="() => refreshBrands()">Tentar novamente</UButton>
+            <div class="min-w-0 space-y-4">
+              <UFormField label="Nome" required>
+                <UInput v-model="form.name" class="w-full" maxlength="160" required />
+              </UFormField>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <UFormField label="Código Vipo" required>
+                  <UInput v-model="form.vipoCode" class="w-full" maxlength="60" required />
+                </UFormField>
+                <UFormField label="Categoria" required>
+                  <USelect v-model="form.category" :items="categories" class="w-full" />
+                </UFormField>
               </div>
-              <p v-else-if="!brandOptions.length" class="text-sm text-muted">
-                Cadastre uma marca em <NuxtLink to="/admin/marcas" class="underline">Marcas</NuxtLink> para adicionar aparelhos.
-              </p>
-              <div v-for="(item, index) in form.compatibilities" :key="index" class="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-                <UFormField label="Marca" required><USelect v-model="item.brandId" :items="brandOptions" placeholder="Selecione" class="w-full" required /></UFormField>
-                <UFormField label="Modelo ou linha" required><UInput v-model="item.model" class="w-full" maxlength="140" required /></UFormField>
-                <UButton type="button" icon="i-lucide-trash-2" color="neutral" variant="ghost" :aria-label="`Remover aparelho ${index + 1}`" @click="void (form.compatibilities.splice(index, 1))" />
-              </div>
-              <UButton type="button" color="neutral" variant="outline" icon="i-lucide-plus" :disabled="!brandOptions.length || form.compatibilities.length >= 100" @click="void (form.compatibilities.push({ brandId: '', model: '' }))">Adicionar aparelho</UButton>
-            </section>
 
-            <UFormField label="Foto">
-              <div v-if="photoUrl && !removePhoto && !file" class="mb-2 space-y-2">
-                <img :src="photoUrl" alt="Foto atual do controle" class="max-h-40 max-w-full rounded object-contain" />
-                <UButton type="button" size="sm" color="neutral" variant="ghost" @click="void (removePhoto = true)">Remover foto atual</UButton>
-              </div>
-              <UButton v-if="removePhoto && !file" type="button" size="sm" color="neutral" variant="ghost" @click="void (removePhoto = false)">Manter foto atual</UButton>
-              <UFileUpload v-model="file" accept="image/jpeg,image/png,image/webp,image/avif" :label="photoUrl ? 'Escolher nova foto' : 'Escolher foto'" description="JPG, PNG, WebP ou AVIF de até 750 KiB" class="w-full" />
-            </UFormField>
+              <UFormField label="Código do controle original">
+                <UInput v-model="form.originalRemoteCode" class="w-full" maxlength="80" />
+              </UFormField>
+              <section class="space-y-2" aria-label="Aparelhos compatíveis">
+                <h3 class="text-sm font-semibold">Aparelhos compatíveis</h3>
+                <div v-if="brandsError" class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm text-error">Não foi possível carregar as marcas.</p>
+                  <UButton type="button" size="sm" variant="ghost" @click="() => refreshBrands()">Tentar novamente</UButton>
+                </div>
+                <UFormField v-else label="Marcas">
+                  <USelectMenu v-model="form.brandIds" :items="brandOptions" value-key="value" multiple
+                    :disabled="!brandOptions.length" placeholder="Selecione as marcas" class="w-full" />
+                </UFormField>
+                <p v-if="!brandsError && !brandOptions.length" class="text-sm text-muted">
+                  Cadastre uma marca em <NuxtLink to="/admin/marcas" class="underline">Marcas</NuxtLink> para selecioná-la aqui.
+                </p>
 
-            <UFormField label="Observações"><UTextarea v-model="form.notes" class="w-full" maxlength="2000" /></UFormField>
-            <USwitch v-model="form.active" label="Exibir no catálogo público" />
+                <UFormField label="Modelos ou linhas" description="Pressione Enter após digitar cada modelo.">
+                  <UInputTags v-model="form.models" :max="100" :max-length="140" add-on-blur
+                    placeholder="Ex.: Sky-7067" class="w-full" />
+                </UFormField>
+              </section>
+
+              <UFormField label="Observações"><UTextarea v-model="form.notes" class="w-full" maxlength="2000" /></UFormField>
+              <USwitch v-model="form.active" label="Exibir no catálogo público" />
+            </div>
           </fieldset>
           <UAlert v-if="submitError" color="error" :title="submitError" role="alert" />
           <div class="flex justify-end gap-2">

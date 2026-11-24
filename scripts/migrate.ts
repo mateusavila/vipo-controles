@@ -43,32 +43,50 @@ try {
   try {
     const compatibilities = await tx.execute('PRAGMA table_info(remote_compatibilities)')
     const legacy = compatibilities.rows.some(column => column.name === 'brand')
-    if (legacy) await tx.execute('ALTER TABLE remote_compatibilities RENAME TO remote_compatibilities_legacy')
-    await tx.execute(`CREATE TABLE IF NOT EXISTS remote_compatibilities (
-      id TEXT PRIMARY KEY NOT NULL,
+    const columns = await tx.execute('PRAGMA table_info(remote_controls)')
+    if (!columns.rows.some(column => column.name === 'models')) {
+      await tx.execute("ALTER TABLE remote_controls ADD COLUMN models TEXT NOT NULL DEFAULT '[]'")
+    }
+    await tx.execute(`CREATE TABLE IF NOT EXISTS remote_control_brands (
       remote_control_id TEXT NOT NULL REFERENCES remote_controls(id) ON DELETE CASCADE,
       brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE RESTRICT,
-      model TEXT NOT NULL
+      PRIMARY KEY (remote_control_id, brand_id)
     )`)
-    await tx.execute(`CREATE UNIQUE INDEX IF NOT EXISTS remote_compatibilities_control_brand_id_model_unique
-      ON remote_compatibilities (remote_control_id, brand_id, model)`)
-    if (legacy) {
-      await tx.execute(`INSERT INTO brands (id, name)
-        SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' ||
-          substr(hex(randomblob(2)), 2) || '-8' || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))),
-          MIN(trim(brand))
-        FROM remote_compatibilities_legacy
-        GROUP BY trim(brand) COLLATE NOCASE
-        ON CONFLICT (name) DO NOTHING`)
-      await tx.execute(`INSERT INTO remote_compatibilities (id, remote_control_id, brand_id, model)
-        SELECT MIN(legacy.id), legacy.remote_control_id, brands.id, legacy.model
-        FROM remote_compatibilities_legacy legacy
-        JOIN brands ON brands.name = trim(legacy.brand)
-        GROUP BY legacy.remote_control_id, brands.id, legacy.model`)
-      await tx.execute('DROP TABLE remote_compatibilities_legacy')
+    await tx.execute('CREATE INDEX IF NOT EXISTS remote_control_brands_brand_id_idx ON remote_control_brands (brand_id)')
+
+    if (compatibilities.rows.length) {
+      if (legacy) {
+        await tx.execute(`INSERT INTO brands (id, name)
+          SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' ||
+            substr(hex(randomblob(2)), 2) || '-8' || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))),
+            MIN(trim(brand))
+          FROM remote_compatibilities
+          GROUP BY trim(brand) COLLATE NOCASE
+          ON CONFLICT (name) DO NOTHING`)
+      }
+      const brandSource = legacy
+        ? 'JOIN brands ON brands.name = trim(compatibility.brand)'
+        : 'JOIN brands ON brands.id = compatibility.brand_id'
+      await tx.execute(`INSERT INTO remote_control_brands (remote_control_id, brand_id)
+        SELECT DISTINCT compatibility.remote_control_id, brands.id
+        FROM remote_compatibilities compatibility ${brandSource}
+        WHERE true
+        ON CONFLICT (remote_control_id, brand_id) DO NOTHING`)
+      await tx.execute(`UPDATE remote_controls SET models = (
+        SELECT json_group_array(model) FROM (
+          SELECT MIN(trim(compatibility.model)) AS model
+          FROM remote_compatibilities compatibility
+          WHERE compatibility.remote_control_id = remote_controls.id AND trim(compatibility.model) <> ''
+          GROUP BY trim(compatibility.model) COLLATE NOCASE
+          ORDER BY model COLLATE NOCASE
+        )
+      )
+      WHERE EXISTS (
+        SELECT 1 FROM remote_compatibilities compatibility
+        WHERE compatibility.remote_control_id = remote_controls.id
+      )`)
+      await tx.execute('DROP TABLE remote_compatibilities')
     }
-    await tx.execute('CREATE INDEX IF NOT EXISTS remote_compatibilities_brand_id_model_idx ON remote_compatibilities (brand_id, model)')
-    await tx.execute('CREATE INDEX IF NOT EXISTS remote_compatibilities_model_idx ON remote_compatibilities (model)')
     await tx.commit()
   } finally {
     tx.close()

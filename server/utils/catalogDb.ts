@@ -2,10 +2,10 @@ import { and, asc, count, eq, exists, getTableColumns, inArray, or, sql, type SQ
 import type { H3Event } from 'h3'
 import { z } from 'zod'
 import { photoMaxBytes, remoteFields } from '../../shared/catalog'
-import { brands, remoteCompatibilities, remoteControls, remoteSearchTerms, searchTerms } from '../database/schema'
+import { brands, remoteControlBrands, remoteControls, remoteSearchTerms, searchTerms } from '../database/schema'
 
 const controls = remoteControls
-const compatible = remoteCompatibilities
+const links = remoteControlBrands
 const { photoBytes: _bytes, photoMime: _mime, ...controlFields } = getTableColumns(controls)
 
 const filter = z.string().trim().max(160).optional()
@@ -36,23 +36,23 @@ function contains(field: SQLWrapper, value: string) {
 type Db = ReturnType<typeof identityDb>
 type ControlRow = Pick<typeof controls.$inferSelect, keyof typeof controlFields>
 
-async function attachCompatibilities(db: Db, rows: ControlRow[]) {
+async function attachBrands(db: Db, rows: ControlRow[]) {
   if (!rows.length) return []
   const matches = await db.select({
-    remoteControlId: compatible.remoteControlId,
+    remoteControlId: links.remoteControlId,
     brand: { id: brands.id, name: brands.name },
-    model: compatible.model,
-  }).from(compatible).innerJoin(brands, eq(brands.id, compatible.brandId)).where(inArray(compatible.remoteControlId, rows.map(row => row.id)))
-    .orderBy(asc(brands.name), asc(compatible.model)).all()
+  }).from(links).innerJoin(brands, eq(brands.id, links.brandId))
+    .where(inArray(links.remoteControlId, rows.map(row => row.id)))
+    .orderBy(asc(brands.name), asc(brands.id)).all()
 
-  const byControl = new Map<string, { brand: { id: string, name: string }, model: string }[]>()
-  for (const { remoteControlId, brand, model } of matches) {
+  const byControl = new Map<string, { id: string, name: string }[]>()
+  for (const { remoteControlId, brand } of matches) {
     const items = byControl.get(remoteControlId) ?? []
-    items.push({ brand, model })
+    items.push(brand)
     byControl.set(remoteControlId, items)
   }
 
-  return rows.map(row => ({ ...row, compatibilities: byControl.get(row.id) ?? [] }))
+  return rows.map(row => ({ ...row, brands: byControl.get(row.id) ?? [] }))
 }
 
 export async function listControls(event: H3Event, publicOnly: boolean) {
@@ -64,24 +64,24 @@ export async function listControls(event: H3Event, publicOnly: boolean) {
   if (publicOnly) fields.push(eq(controls.active, true))
   if (name) fields.push(contains(controls.name, name))
   if (vipoCode) fields.push(eq(controls.vipoCode, vipoCode.toUpperCase()))
-  const compatibleFilters = [
-    eq(compatible.remoteControlId, controls.id),
-    brand ? contains(brands.name, brand) : undefined,
-    brandId ? eq(compatible.brandId, brandId) : undefined,
-    model ? contains(compatible.model, model) : undefined,
-  ]
-  const matchedAppliance = (...terms: SQL[]) =>
-    exists(db.select({ id: compatible.id }).from(compatible).innerJoin(brands, eq(brands.id, compatible.brandId)).where(and(...compatibleFilters, ...terms)))
+  const brandMatch = (...terms: (SQL | undefined)[]) =>
+    exists(db.select({ id: brands.id }).from(links).innerJoin(brands, eq(brands.id, links.brandId))
+      .where(and(eq(links.remoteControlId, controls.id), ...terms)))
+  const modelMatch = (value: string) =>
+    sql`EXISTS (SELECT 1 FROM json_each(${controls.models}) AS models WHERE ${contains(sql`models.value`, value)})`
 
+  if (brand || brandId) {
+    fields.push(brandMatch(
+      brand ? contains(brands.name, brand) : undefined,
+      brandId ? eq(links.brandId, brandId) : undefined,
+    ))
+  }
+  if (model) fields.push(modelMatch(model))
   if (term) {
-    const words = term.split(' ')
     const controlText = sql`${controls.name} || ' ' || ${controls.vipoCode} || ' ' || coalesce(${controls.originalRemoteCode}, '') || ' ' || coalesce(${controls.notes}, '') || ' ' || CASE WHEN ${controls.category} = 'tv' THEN 'tv televisão' ELSE 'ac ar condicionado ar-condicionado' END`
-    const applianceText = sql`${controlText} || ' ' || ${brands.name} || ' ' || ${compatible.model}`
-    const applianceMatch = matchedAppliance(...words.map(word => contains(applianceText, word)))
-    if (brand || brandId || model) fields.push(applianceMatch)
-    else fields.push(or(and(...words.map(word => contains(controlText, word))), applianceMatch)!)
-  } else if (brand || brandId || model) {
-    fields.push(matchedAppliance())
+    for (const word of term.split(' ')) {
+      fields.push(or(contains(controlText, word), brandMatch(contains(brands.name, word)), modelMatch(word))!)
+    }
   }
   const where = and(...fields)
   const [rows, totals] = await Promise.all([
@@ -98,7 +98,7 @@ export async function listControls(event: H3Event, publicOnly: boolean) {
     await recordSearch(db, searchLabel, where)
   }
 
-  return { items: await attachCompatibilities(db, rows), total: totals?.total ?? 0, page, pageSize }
+  return { items: await attachBrands(db, rows), total: totals?.total ?? 0, page, pageSize }
 }
 
 async function recordSearch(db: Db, label: string, where: SQL | undefined) {
@@ -143,25 +143,23 @@ export async function getControl(event: H3Event, id: string) {
   const db = identityDb(event)
   const row = await db.select(controlFields).from(controls).where(eq(controls.id, id)).get()
   if (!row) throw notFound()
-  const [item] = await attachCompatibilities(db, [row])
+  const [item] = await attachBrands(db, [row])
   return item!
 }
 
 export async function saveControl(event: H3Event, existingId?: string) {
-  const { compatibilities, photo, ...fields } = await readValidatedBody(event, writeInput.parse)
+  const { brandIds: selectedBrands, models, photo, ...fields } = await readValidatedBody(event, writeInput.parse)
   const id = existingId ?? crypto.randomUUID()
   const photoFields = photo === null
     ? { photoUrl: null, photoBytes: null, photoMime: null }
     : photo === undefined ? {} : controlPhoto(photo, id)
   const db = identityDb(event)
-  const uniqueModels = new Map(compatibilities.map(item => [
-    JSON.stringify([item.brandId, item.model.toLowerCase()]), item,
-  ]))
-  const models = Array.from(uniqueModels.values(), item => ({ remoteControlId: id, ...item }))
+  const brandIds = [...new Set(selectedBrands)]
+  const uniqueModels = [...new Map(models.map(model => [model.toLowerCase(), model])).values()]
+  const values = { ...fields, ...photoFields, models: uniqueModels }
 
   try {
     await db.transaction(async tx => {
-      const brandIds = [...new Set(models.map(item => item.brandId))]
       if (brandIds.length) {
         const existingBrands = await tx.select({ id: brands.id }).from(brands).where(inArray(brands.id, brandIds)).all()
         if (existingBrands.length !== brandIds.length) {
@@ -169,14 +167,16 @@ export async function saveControl(event: H3Event, existingId?: string) {
         }
       }
       if (existingId) {
-        const result = await tx.update(controls).set({ ...fields, ...photoFields })
+        const result = await tx.update(controls).set(values)
           .where(eq(controls.id, id)).run()
         if (!result.rowsAffected) throw notFound()
-        await tx.delete(compatible).where(eq(compatible.remoteControlId, id)).run()
+        await tx.delete(links).where(eq(links.remoteControlId, id)).run()
       } else {
-        await tx.insert(controls).values({ id, ...fields, ...photoFields }).run()
+        await tx.insert(controls).values({ id, ...values }).run()
       }
-      if (models.length) await tx.insert(compatible).values(models).run()
+      if (brandIds.length) {
+        await tx.insert(links).values(brandIds.map(brandId => ({ remoteControlId: id, brandId }))).run()
+      }
     })
   } catch (error) {
     const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error
@@ -193,7 +193,7 @@ export async function deleteControl(event: H3Event, id: string) {
   const db = identityDb(event)
   await db.transaction(async tx => {
     await tx.delete(remoteSearchTerms).where(eq(remoteSearchTerms.remoteControlId, id)).run()
-    await tx.delete(compatible).where(eq(compatible.remoteControlId, id)).run()
+    await tx.delete(links).where(eq(links.remoteControlId, id)).run()
     const result = await tx.delete(controls).where(eq(controls.id, id)).run()
     if (!result.rowsAffected) throw notFound()
   })

@@ -1,7 +1,7 @@
 import { asc, eq, exists, notExists, and } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { z } from 'zod'
-import { brands, remoteCompatibilities, remoteControls } from '../database/schema'
+import { brands, remoteControlBrands, remoteControls } from '../database/schema'
 
 const input = z.object({ name: z.string().trim().min(1).max(100) })
 
@@ -17,10 +17,10 @@ function brandId(event: H3Event) {
 
 export async function listBrands(event: H3Event, publicOnly: boolean) {
   const db = identityDb(event)
-  const visible = publicOnly ? exists(db.select({ id: remoteCompatibilities.id })
-    .from(remoteCompatibilities)
-    .innerJoin(remoteControls, eq(remoteControls.id, remoteCompatibilities.remoteControlId))
-    .where(and(eq(remoteCompatibilities.brandId, brands.id), eq(remoteControls.active, true)))) : undefined
+  const visible = publicOnly ? exists(db.select({ id: remoteControlBrands.brandId })
+    .from(remoteControlBrands)
+    .innerJoin(remoteControls, eq(remoteControls.id, remoteControlBrands.remoteControlId))
+    .where(and(eq(remoteControlBrands.brandId, brands.id), eq(remoteControls.active, true)))) : undefined
 
   return db.select().from(brands).where(visible).orderBy(asc(brands.name), asc(brands.id)).all()
 }
@@ -48,8 +48,8 @@ export async function deleteBrand(event: H3Event) {
   const id = brandId(event)
   const db = identityDb(event)
   return db.transaction(async tx => {
-    const linked = tx.select({ id: remoteCompatibilities.id }).from(remoteCompatibilities)
-      .where(eq(remoteCompatibilities.brandId, id))
+    const linked = tx.select({ id: remoteControlBrands.brandId }).from(remoteControlBrands)
+      .where(eq(remoteControlBrands.brandId, id))
     const result = await tx.delete(brands).where(and(eq(brands.id, id), notExists(linked))).run()
     if (result.rowsAffected) return { ok: true }
     if (!await tx.select({ id: brands.id }).from(brands).where(eq(brands.id, id)).get()) throw brandNotFound()
