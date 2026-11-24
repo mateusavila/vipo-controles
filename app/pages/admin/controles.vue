@@ -231,7 +231,7 @@ async function deleteSelected() {
             <div class="w-full min-w-0 max-w-72 md:max-w-none">
               <UFormField label="Foto">
                 <div v-if="photoUrl && !removePhoto && !file" class="mb-2 space-y-2">
-                  <img :src="photoUrl" alt="Foto atual do controle" class="aspect-[3/4] w-full rounded-lg bg-elevated object-contain" />
+                  <img :src="photoUrl" alt="Foto atual do controle" class="aspect-3/4 w-full rounded-lg bg-elevated object-contain" />
                   <UButton type="button" size="sm" color="neutral" variant="ghost" @click="void (removePhoto = true)">Remover foto atual</UButton>
                 </div>
                 <UButton v-if="removePhoto && !file" type="button" size="sm" color="neutral" variant="ghost" @click="void (removePhoto = false)">Manter foto atual</UButton>
