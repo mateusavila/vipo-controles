@@ -9,9 +9,10 @@ const links = remoteControlBrands
 const { photoBytes: _bytes, photoMime: _mime, ...controlFields } = getTableColumns(controls)
 
 const filter = z.string().trim().max(160).optional()
+const defaultPageSize = 20
 const listQuery = z.object({
   page: z.coerce.number().int().min(1).max(1_000_000).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  pageSize: z.coerce.number().int().min(1).max(100).default(defaultPageSize),
   q: filter,
   name: filter,
   brand: filter,
@@ -55,9 +56,25 @@ async function attachBrands(db: Db, rows: ControlRow[]) {
   return rows.map(row => ({ ...row, brands: byControl.get(row.id) ?? [] }))
 }
 
+type ListQuery = z.output<typeof listQuery>
+
+const firstCatalogPage = defineCachedFunction(
+  (event: H3Event) => queryControls(event, true, listQuery.parse({})),
+  { name: 'public-controls-first-page', getKey: () => 'default', maxAge: 60, swr: false },
+)
+
 export async function listControls(event: H3Event, publicOnly: boolean) {
-  const { page, pageSize, name, brand, brandId, model, vipoCode, track, q } =
-    await getValidatedQuery(event, listQuery.parse)
+  const query = await getValidatedQuery(event, listQuery.parse)
+  if (publicOnly && query.page === 1 && query.pageSize === defaultPageSize && query.track !== '1'
+    && !query.q && !query.name && !query.brand && !query.brandId && !query.model && !query.vipoCode) {
+    return firstCatalogPage(event)
+  }
+
+  return queryControls(event, publicOnly, query)
+}
+
+async function queryControls(event: H3Event, publicOnly: boolean, query: ListQuery) {
+  const { page, pageSize, name, brand, brandId, model, vipoCode, track, q } = query
   const db = identityDb(event)
   const term = q?.replace(/\s+/g, ' ')
   const fields: SQL[] = []

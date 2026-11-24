@@ -1,1 +1,1 @@
-export default defineEventHandler(event => listBrands(event, true))
+export default defineEventHandler(event => listBrands(event))

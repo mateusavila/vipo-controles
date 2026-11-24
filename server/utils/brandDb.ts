@@ -1,7 +1,7 @@
-import { asc, eq, exists, notExists, and } from 'drizzle-orm'
+import { asc, eq, notExists, and } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { z } from 'zod'
-import { brands, remoteControlBrands, remoteControls } from '../database/schema'
+import { brands, remoteControlBrands } from '../database/schema'
 
 const input = z.object({ name: z.string().trim().min(1).max(100) })
 
@@ -15,14 +15,8 @@ function brandId(event: H3Event) {
   return id.data
 }
 
-export async function listBrands(event: H3Event, publicOnly: boolean) {
-  const db = identityDb(event)
-  const visible = publicOnly ? exists(db.select({ id: remoteControlBrands.brandId })
-    .from(remoteControlBrands)
-    .innerJoin(remoteControls, eq(remoteControls.id, remoteControlBrands.remoteControlId))
-    .where(and(eq(remoteControlBrands.brandId, brands.id), eq(remoteControls.active, true)))) : undefined
-
-  return db.select().from(brands).where(visible).orderBy(asc(brands.name), asc(brands.id)).all()
+export async function listBrands(event: H3Event) {
+  return identityDb(event).select().from(brands).orderBy(asc(brands.name), asc(brands.id)).all()
 }
 
 export async function saveBrand(event: H3Event, editing: boolean) {

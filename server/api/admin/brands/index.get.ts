@@ -1,4 +1,4 @@
 export default defineEventHandler(async event => {
   await requireAdmin(event)
-  return listBrands(event, false)
+  return listBrands(event)
 })
