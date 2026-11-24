@@ -3,3 +3,4 @@ node_modules/
 .nuxt/
 acesso-evania.txt
 .data/kv/
+.DS_Store
