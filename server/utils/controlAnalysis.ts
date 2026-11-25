@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { z } from 'zod'
@@ -22,10 +23,10 @@ const responseSchema = z.object({
 
 type Db = ReturnType<typeof identityDb>
 
-async function latestAnalysis(db: Db, id: string) {
+async function latestAnalysis(db: Db, id: string, hash: string) {
   const [analysis] = await db.all<{ state: 'running' | 'done', result: string | null }>(sql`
     SELECT state, result FROM control_image_analyses
-    WHERE control_id = ${id}
+    WHERE control_id = ${id} AND photo_hash = ${hash}
       AND (state = 'done' OR (state = 'running' AND created_at > datetime('now', '-10 minutes')))
     LIMIT 1
   `)
@@ -33,7 +34,13 @@ async function latestAnalysis(db: Db, id: string) {
 }
 
 export async function getControlImageAnalysis(event: H3Event, id: string): Promise<ControlImageAnalysis> {
-  const analysis = await latestAnalysis(identityDb(event), id)
+  const db = identityDb(event)
+  const image = await db.select({ bytes: remoteControls.photoBytes })
+    .from(remoteControls).where(eq(remoteControls.id, id)).get()
+  if (!image) throw createError({ statusCode: 404, message: 'Controle não encontrado.' })
+  if (!image.bytes?.length) return { state: 'unavailable' }
+  const hash = createHash('sha256').update(Buffer.from(image.bytes)).digest('hex')
+  const analysis = await latestAnalysis(db, id, hash)
   if (analysis?.state === 'done') {
     return { state: 'done', suggestions: storedSuggestions.parse(JSON.parse(analysis.result ?? '[]')) }
   }
@@ -61,13 +68,14 @@ export async function analyzeControlPhoto(event: H3Event, id: string): Promise<C
       throw createError({ statusCode: 400, message: 'Para analisar a foto, salve-a em JPG, PNG ou WebP.' })
     }
 
+    const hash = createHash('sha256').update(Buffer.from(image.bytes)).digest('hex')
     await tx.run(sql`
       UPDATE control_image_analyses SET state = 'failed'
-      WHERE control_id = ${id} AND state = 'running' AND created_at <= datetime('now', '-10 minutes')
+      WHERE control_id = ${id} AND photo_hash = ${hash} AND state = 'running' AND created_at <= datetime('now', '-10 minutes')
     `)
     const reservation = await tx.run(sql`
-      INSERT INTO control_image_analyses (id, control_id, state)
-      SELECT ${attemptId}, ${id}, 'running'
+      INSERT INTO control_image_analyses (id, control_id, photo_hash, state)
+      SELECT ${attemptId}, ${id}, ${hash}, 'running'
       WHERE (SELECT COUNT(*) FROM control_image_analyses WHERE created_at >= datetime('now', 'start of month')) < ${monthlyLimit}
       ON CONFLICT DO NOTHING
     `)

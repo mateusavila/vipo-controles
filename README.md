@@ -52,3 +52,9 @@ A integração usa GPT-6 Luna e permite até uma chamada de ferramenta de busca 
 ## Upload de fotos
 
 O servidor converte novos PNGs em WebP antes de gravar, mantendo dimensões e transparência. O PNG de entrada pode ter até 3 MiB e 16 megapixels. O arquivo salvo pode ter até 750 KiB. JPG, WebP e AVIF seguem com o limite de 750 KiB no upload. O processamento usa Sharp no runtime Node.js.
+
+### Criação pela foto
+
+Em **Novo controle**, seleciona a imagem. O upload salva um rascunho privado e libera os campos na mesma janela. Para arquivos como `Semp Toshiba 39277.png`, o formulário sugere o código e a marca cadastrada. Podes revisar as sugestões de modelos e finalizar com **Salvar**. Rascunhos interrompidos ficam disponíveis no admin.
+
+Roda `bun run db:migrate` antes de usar esta versão. A análise é limitada por controle e pelo hash dos bytes da foto salva. Reenviar uma foto idêntica reaproveita o resultado. Uma foto diferente libera uma análise após salvar a troca. Na migração, análises anteriores são associadas à foto disponível no momento, pois o formato anterior não guardava seu hash.

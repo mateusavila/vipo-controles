@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ControlImageAnalysis, ModelSuggestion } from '~~/shared/types'
+import type { Control, ControlImageAnalysis, ModelSuggestion } from '~~/shared/types'
 import { photoMaxBytes, pngUploadMaxBytes, remoteFields, type RemoteFields } from '~~/shared/catalog'
 
 definePageMeta({ layout: 'admin', middleware: 'admin' })
@@ -23,6 +23,9 @@ const loadingEditor = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const editingId = ref<string>()
+const creatingDraft = ref(false)
+const uploadingDraft = ref(false)
+let draftId: string | undefined
 const photoUrl = ref<string | null>(null)
 const file = shallowRef<File>()
 const removePhoto = ref(false)
@@ -66,6 +69,76 @@ function addSuggestions(suggestions: ModelSuggestion[]) {
   addedSuggestions.value = true
 }
 
+let suggestedCode = ''
+let suggestedBrandId: string | undefined
+
+function normalizeBrandName(value: string) {
+  const name = value.normalize('NFD').replace(/\p{M}/gu, '').trim().replace(/\s+/g, ' ').toLowerCase()
+  return name === 'phillips' ? 'philips' : name
+}
+
+watch(file, image => {
+  if (!creatingDraft.value || editingId.value || !image) return
+  fillFromFilename(image.name)
+  void uploadDraftPhoto(image)
+})
+
+function fillFromFilename(filename: string) {
+
+  const match = /^(.+?)\s+(\d+)\.png$/i.exec(filename.trim())
+  const code = match?.[2] ?? ''
+  if (!form.vipoCode.trim() || form.vipoCode === suggestedCode) {
+    form.vipoCode = code
+    suggestedCode = code
+  }
+
+  const brandName = match?.[1]
+  const brand = brandName ? brands.value?.find(item => item.name.trim().toLowerCase() === brandName.trim().toLowerCase())
+    ?? brands.value?.find(item => normalizeBrandName(item.name) === normalizeBrandName(brandName)) : undefined
+
+  if (!form.brandIds.length || (form.brandIds.length === 1 && form.brandIds[0] === suggestedBrandId)) {
+    form.brandIds = brand ? [brand.id] : []
+    suggestedBrandId = brand?.id
+  }
+}
+
+const postDraft = $fetch as unknown as (
+  url: string, options: { method: 'POST', body: { id: string, photo: string }, retry: 0 },
+) => Promise<{ id: string, photoUrl: string }>
+
+function validatePhoto(image: File) {
+  const isPng = image.type === 'image/png' || /\.png$/i.test(image.name)
+  if (image.size <= (isPng ? pngUploadMaxBytes : photoMaxBytes)) return true
+  submitError.value = isPng ? 'O PNG deve ter até 3 MiB.' : 'A foto deve ter até 750 KiB.'
+  return false
+}
+
+async function uploadDraftPhoto(image: File) {
+  if (uploadingDraft.value || editingId.value) return
+  submitError.value = ''
+  if (!validatePhoto(image)) return
+  uploadingDraft.value = true
+  try {
+    draftId ??= crypto.randomUUID()
+    const draft = await postDraft('/api/admin/controls/draft', {
+      method: 'POST', body: { id: draftId, photo: await fileToBase64(image) }, retry: 0,
+    })
+    editingId.value = draft.id
+    photoUrl.value = draft.photoUrl
+    file.value = undefined
+    void loadAnalysis('GET')
+    void refresh()
+  } catch (error) {
+    submitError.value = errorMessage(error, 'Não foi possível enviar a foto.')
+  } finally {
+    uploadingDraft.value = false
+  }
+}
+
+function retryDraftPhoto() {
+  if (file.value) return uploadDraftPhoto(file.value)
+}
+
 function emptyForm(): RemoteFields {
   return { vipoCode: '', category: 'tv', notes: '', active: true, brandIds: [], models: [] }
 }
@@ -82,6 +155,10 @@ function resetFilters() {
 
 function createControl() {
   Object.assign(form, emptyForm())
+  creatingDraft.value = true
+  draftId = undefined
+  suggestedCode = ''
+  suggestedBrandId = undefined
   imageAnalysis.value = undefined
   analysisError.value = ''
   addedSuggestions.value = false
@@ -107,15 +184,16 @@ async function editControl(id: string) {
   loadingEditor.value = true
   actionError.value = ''
   try {
-    const control = await $fetch(`/api/admin/controls/${id}`)
+    const control = await $fetch<Control & { isDraft: boolean }>(`/api/admin/controls/${id}`)
     createControl()
+    creatingDraft.value = control.isDraft
     editingId.value = id
     photoUrl.value = control.photoUrl
     Object.assign(form, {
-      vipoCode: control.vipoCode,
+      vipoCode: control.isDraft ? '' : control.vipoCode,
       category: control.category,
       notes: control.notes ?? '',
-      active: control.active,
+      active: control.isDraft || control.active,
       brandIds: control.brands.map(brand => brand.id),
       models: [...control.models],
     })
@@ -128,7 +206,7 @@ async function editControl(id: string) {
 }
 
 async function save() {
-  if (saving.value || analysisBusy.value) return
+  if (saving.value || analysisBusy.value || uploadingDraft.value || !editingId.value) return
   submitError.value = ''
   const validated = remoteFields.safeParse(form)
   if (!validated.success) {
@@ -136,13 +214,10 @@ async function save() {
     submitError.value = issue?.message ?? 'Confira os dados do controle.'
     return
   }
-  if (file.value) {
-    const isPng = file.value.type === 'image/png' || /\.png$/i.test(file.value.name)
-    const limit = isPng ? pngUploadMaxBytes : photoMaxBytes
-    if (file.value.size > limit) {
-      submitError.value = isPng ? 'O PNG deve ter até 3 MiB.' : 'A foto deve ter até 750 KiB.'
-      return
-    }
+  if (file.value && !validatePhoto(file.value)) return
+  if (!file.value && (!photoUrl.value || removePhoto.value)) {
+    submitError.value = 'Adiciona uma foto ao controle para salvar.'
+    return
   }
 
   saving.value = true
@@ -151,8 +226,7 @@ async function save() {
       ? await fileToBase64(file.value)
       : removePhoto.value ? null : undefined
     const body = { ...validated.data, photo }
-    if (editingId.value) await $fetch(`/api/admin/controls/${editingId.value}`, { method: 'PUT', body })
-    else await $fetch('/api/admin/controls', { method: 'POST', body })
+    await $fetch(`/api/admin/controls/${editingId.value}`, { method: 'PUT', body })
     showEditor.value = false
     savedMessage.value = 'Controle salvo.'
     await refresh()
@@ -172,8 +246,8 @@ function fileToBase64(image: File) {
   })
 }
 
-function askDelete(control: { id: string, vipoCode: string }) {
-  deleteTarget.value = control
+function askDelete(control: { id: string, vipoCode: string, isDraft: boolean }) {
+  deleteTarget.value = { id: control.id, vipoCode: control.isDraft ? 'em rascunho' : control.vipoCode }
   actionError.value = ''
   savedMessage.value = ''
   showDelete.value = true
@@ -229,23 +303,24 @@ async function deleteSelected() {
         <table class="w-full text-left text-sm">
           <thead>
             <tr>
-              <th scope="col" class="whitespace-nowrap p-2"># Vipo</th>
-              <th scope="col" class="p-2">Controle</th>
+              <th scope="col" class="whitespace-nowrap p-2"># Controle</th>
               <th scope="col" class="p-2">Aparelhos compatíveis</th>
               <th scope="col" class="p-2 text-end">Ações</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in data.items" :key="item.id" class="border-t border-default">
-              <td class="p-2">{{ item.vipoCode }}</td>
               <td class="min-w-44 p-2">
                 <div class="flex items-center gap-2">
-                  <UIcon :name="item.active ? 'i-lucide-check' : 'i-lucide-minus'" aria-hidden="true"
-                    class="size-4 shrink-0" :class="item.active ? 'text-success' : 'text-muted'" />
-                  <span class="sr-only">{{ item.active ? 'Ativo' : 'Inativo' }}</span>
-                  <IconCategory :item />
                   <button type="button" class="cursor-pointer rounded text-start font-medium hover:underline"
-                    :disabled="loadingEditor" @click="editControl(item.id)">{{ categories.find(category => category.value === item.category)?.label }}</button>
+                    :disabled="loadingEditor" @click="editControl(item.id)">
+                    <UIcon :name="item.active ? 'i-lucide-check' : 'i-lucide-minus'" aria-hidden="true"
+                      class="size-4 shrink-0" :class="item.active ? 'text-success' : 'text-muted'" />
+                    <span class="sr-only">{{ item.active ? 'Ativo' : 'Inativo' }}</span>
+                    <IconCategory :item />
+                    {{ item.isDraft ? 'Rascunho' : item.vipoCode }}
+
+                  </button>
                 </div>
               </td>
               <td class="p-2">
@@ -268,10 +343,10 @@ async function deleteSelected() {
       <UPagination v-if="data && data.total > pageSize" v-model:page="page" :total="data.total" :items-per-page="pageSize" />
     </section>
 
-    <UModal v-model:open="showEditor" :title="editingId ? 'Editar controle' : 'Novo controle'" :dismissible="!saving && !analysisBusy" :close="!saving && !analysisBusy" :ui="{ content: 'max-w-4xl' }">
+    <UModal v-model:open="showEditor" :title="creatingDraft ? 'Novo controle' : 'Editar controle'" :dismissible="!saving && !analysisBusy && !uploadingDraft" :close="!saving && !analysisBusy && !uploadingDraft" :ui="{ content: 'max-w-4xl' }">
       <template #body>
         <form class="space-y-4" @submit.prevent="save">
-          <fieldset :disabled="saving" class="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <fieldset :disabled="saving" class="grid items-start gap-6" :class="editingId ? 'md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]' : 'justify-items-center'">
             <div class="w-full min-w-0 max-w-72 md:max-w-none">
               <UFormField label="Foto">
                 <div v-if="photoUrl && !removePhoto && !file" class="mb-2 space-y-2">
@@ -279,14 +354,14 @@ async function deleteSelected() {
                   <UButton type="button" size="sm" color="neutral" variant="ghost" @click="void (removePhoto = true)">Remover foto atual</UButton>
                 </div>
                 <UButton v-if="removePhoto && !file" type="button" size="sm" color="neutral" variant="ghost" @click="void (removePhoto = false)">Manter foto atual</UButton>
-                <UFileUpload v-model="file" accept="image/jpeg,image/png,image/webp,image/avif"
+                <UFileUpload v-model="file" :disabled="uploadingDraft || analysisBusy" accept="image/jpeg,image/png,image/webp,image/avif"
                   :label="photoUrl ? 'Escolher nova foto' : 'Escolher foto'"
                   description="PNG até 3 MiB, convertido em WebP. JPG, WebP ou AVIF até 750 KiB." layout="grid" class="w-full"
                   :ui="{ base: photoUrl && !removePhoto && !file ? '' : 'aspect-[3/4]', fileLeadingAvatar: '[&_img]:object-contain' }" />
               </UFormField>
 
             </div>
-            <div class="min-w-0 space-y-4">
+            <div v-if="editingId" class="min-w-0 space-y-4">
               <div class="grid gap-3 sm:grid-cols-2">
                 <UFormField label="Código Vipo" required>
                   <UInput v-model="form.vipoCode" class="w-full" maxlength="60" required />
@@ -357,10 +432,13 @@ async function deleteSelected() {
               <USwitch v-model="form.active" label="Exibir no catálogo público" />
             </div>
           </fieldset>
+          <p v-if="uploadingDraft" class="text-sm text-muted" role="status">Enviando a foto…</p>
+          <UButton v-if="!editingId && file && submitError" type="button" variant="outline" :disabled="uploadingDraft"
+            @click="retryDraftPhoto">Tentar enviar novamente</UButton>
           <UAlert v-if="submitError" color="error" :title="submitError" role="alert" />
           <div class="flex justify-end gap-2">
-            <UButton type="button" color="neutral" variant="ghost" :disabled="saving || analysisBusy" @click="void (showEditor = false)">Cancelar</UButton>
-            <UButton type="submit" :loading="saving" :disabled="analysisBusy">Salvar</UButton>
+            <UButton type="button" color="neutral" variant="ghost" :disabled="saving || analysisBusy || uploadingDraft" @click="void (showEditor = false)">Cancelar</UButton>
+            <UButton v-if="editingId" type="submit" :loading="saving" :disabled="analysisBusy">Salvar</UButton>
           </div>
         </form>
       </template>

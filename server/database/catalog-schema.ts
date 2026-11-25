@@ -12,6 +12,7 @@ export const remoteControls = sqliteTable('remote_controls', {
   photoMime: text('photo_mime'),
   notes: text('notes'),
   models: text('models', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+  isDraft: integer('is_draft', { mode: 'boolean' }).notNull().default(false),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
 }, table => [
   check('remote_controls_category_check', sql`${table.category} IN ('tv', 'ac', 'receptor')`),

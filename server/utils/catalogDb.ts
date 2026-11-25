@@ -22,12 +22,15 @@ const listQuery = z.object({
   track: z.enum(['0', '1']).optional(),
 })
 
+const encodedPhoto = z.string().max(Math.ceil(pngUploadMaxBytes / 3) * 4).regex(/^[A-Za-z0-9+/]+={0,2}$/)
+const draftInput = z.object({ id: z.uuid(), photo: encodedPhoto })
+
 const writeInput = remoteFields.extend({
   name: z.string().trim().min(1).max(160).optional(),
   originalRemoteCode: z.string().trim().max(80).optional(),
   photo: z.union([
     z.null(),
-    z.string().max(Math.ceil(pngUploadMaxBytes / 3) * 4).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+    encodedPhoto,
   ]).optional(),
 })
 
@@ -80,7 +83,7 @@ async function queryControls(event: H3Event, publicOnly: boolean, query: ListQue
   const db = identityDb(event)
   const term = q?.replace(/\s+/g, ' ')
   const fields: SQL[] = []
-  if (publicOnly) fields.push(eq(controls.active, true))
+  if (publicOnly) fields.push(eq(controls.active, true), eq(controls.isDraft, false))
   if (name) fields.push(contains(controls.name, name))
   if (vipoCode) fields.push(eq(controls.vipoCode, vipoCode.toUpperCase()))
   const brandMatch = (...terms: (SQL | undefined)[]) =>
@@ -166,12 +169,28 @@ export async function getControl(event: H3Event, id: string) {
   return item!
 }
 
+export async function createControlDraft(event: H3Event) {
+  const { id, photo } = await readValidatedBody(event, draftInput.parse)
+  const image = await controlPhoto(photo, id)
+  const result = await identityDb(event).insert(controls).values({
+    id, ...image, vipoCode: `__draft__${id}`, name: 'Rascunho', category: 'tv', isDraft: true, active: false,
+  }).onConflictDoUpdate({
+    target: controls.id,
+    set: image,
+    setWhere: eq(controls.isDraft, true),
+  }).run()
+
+  if (!result.rowsAffected) throw createError({ statusCode: 409, message: 'Este controle já foi finalizado.' })
+  return { id, photoUrl: image.photoUrl }
+}
+
 export async function saveControl(event: H3Event, existingId?: string) {
   const { brandIds: selectedBrands, models, photo, ...fields } = await readValidatedBody(event, writeInput.parse)
+  if (photo === null || (!existingId && !photo)) {
+    throw createError({ statusCode: 400, message: 'Adiciona uma foto ao controle para salvar.' })
+  }
   const id = existingId ?? crypto.randomUUID()
-  const photoFields = photo === null
-    ? { photoUrl: null, photoBytes: null, photoMime: null }
-    : photo === undefined ? {} : await controlPhoto(photo, id)
+  const photoFields = photo === undefined ? {} : await controlPhoto(photo, id)
   const db = identityDb(event)
   const brandIds = [...new Set(selectedBrands)]
   const uniqueModels = [...new Map(models.map(model => [model.toLowerCase(), model])).values()]
@@ -186,9 +205,16 @@ export async function saveControl(event: H3Event, existingId?: string) {
         }
       }
       if (existingId) {
+        const current = await tx.select({ hasPhoto: sql<number>`length(${controls.photoBytes}) > 0` })
+          .from(controls).where(eq(controls.id, id)).get()
+        if (!current) throw notFound()
+        if (!photo && !current.hasPhoto) {
+          throw createError({ statusCode: 400, message: 'Adiciona uma foto ao controle para salvar.' })
+        }
         const result = await tx.update(controls).set({
           ...values,
-          name: values.name ?? sql`CASE WHEN ${controls.name} = 'Controle ' || ${controls.vipoCode}
+          isDraft: false,
+          name: values.name ?? sql`CASE WHEN ${controls.isDraft} = 1 OR ${controls.name} = 'Controle ' || ${controls.vipoCode}
             THEN ${'Controle ' + fields.vipoCode} ELSE ${controls.name} END`,
         })
           .where(eq(controls.id, id)).run()

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createClient } from '@libsql/client'
 
 function createControls(table: string) {
@@ -6,7 +7,7 @@ function createControls(table: string) {
       category TEXT NOT NULL CHECK (category IN ('tv', 'ac', 'receptor')),
       name TEXT NOT NULL, original_remote_code TEXT, photo_url TEXT,
       photo_bytes BLOB, photo_mime TEXT, notes TEXT,
-      models TEXT NOT NULL DEFAULT '[]', active INTEGER NOT NULL DEFAULT 1
+      models TEXT NOT NULL DEFAULT '[]', active INTEGER NOT NULL DEFAULT 1, is_draft INTEGER NOT NULL DEFAULT 0
     )`
 }
 
@@ -52,12 +53,11 @@ try {
     `CREATE TABLE IF NOT EXISTS control_image_analyses (
       id TEXT PRIMARY KEY NOT NULL,
       control_id TEXT NOT NULL,
+      photo_hash TEXT NOT NULL DEFAULT '',
       state TEXT NOT NULL CHECK (state IN ('running', 'done', 'failed')),
       result TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS control_image_analyses_once
-      ON control_image_analyses (control_id) WHERE state IN ('running', 'done')`,
     'CREATE INDEX IF NOT EXISTS control_image_analyses_created_idx ON control_image_analyses (created_at)',
   ], 'write')
   const { rows } = await client.execute('PRAGMA table_info(remote_controls)')
@@ -110,9 +110,13 @@ try {
       )`)
       await tx.execute('DROP TABLE remote_compatibilities')
     }
+    if (!columns.rows.some(column => column.name === 'is_draft')) {
+      await tx.execute('ALTER TABLE remote_controls ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0')
+    }
+
     const schema = await tx.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'remote_controls'")
     if (!String(schema.rows[0]?.sql).includes("'receptor'")) {
-      const controlColumns = 'id, vipo_code, category, name, original_remote_code, photo_url, photo_bytes, photo_mime, notes, models, active'
+      const controlColumns = 'id, vipo_code, category, name, original_remote_code, photo_url, photo_bytes, photo_mime, notes, models, active, is_draft'
       await tx.execute(createControls('remote_controls_new'))
       await tx.execute(createBrandLinks('remote_control_brands_new', 'remote_controls_new'))
       await tx.execute(createSearchLinks('remote_search_terms_new', 'remote_controls_new'))
@@ -135,6 +139,28 @@ try {
       if (check.rows.length) throw new Error('A migração deixou vínculos inválidos.')
     }
 
+    const analysisColumns = await tx.execute('PRAGMA table_info(control_image_analyses)')
+    if (!analysisColumns.rows.some(column => column.name === 'photo_hash')) {
+      await tx.execute("ALTER TABLE control_image_analyses ADD COLUMN photo_hash TEXT NOT NULL DEFAULT ''")
+      const existing = await tx.execute("SELECT id, control_id FROM control_image_analyses WHERE state IN ('running', 'done')")
+      for (const row of existing.rows) {
+        const { rows } = await tx.execute({
+          sql: 'SELECT photo_bytes FROM remote_controls WHERE id = ?',
+          args: [row.control_id],
+        })
+        const bytes = rows[0]?.photo_bytes
+        if (bytes instanceof ArrayBuffer || bytes instanceof Uint8Array) {
+          const hash = createHash('sha256').update(new Uint8Array(bytes)).digest('hex')
+          await tx.execute({
+            sql: 'UPDATE control_image_analyses SET photo_hash = ? WHERE id = ?',
+            args: [hash, row.id],
+          })
+        }
+      }
+    }
+    await tx.execute('DROP INDEX IF EXISTS control_image_analyses_once')
+    await tx.execute(`CREATE UNIQUE INDEX IF NOT EXISTS control_image_analyses_once_per_photo
+      ON control_image_analyses (control_id, photo_hash) WHERE state IN ('running', 'done')`)
     await tx.commit()
   } finally {
     tx.close()
