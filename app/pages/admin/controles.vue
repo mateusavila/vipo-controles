@@ -304,27 +304,27 @@ async function deleteSelected() {
           <thead>
             <tr>
               <th scope="col" class="whitespace-nowrap p-2"># Controle</th>
+              <th scope="col" class="p-2">Marca</th>
               <th scope="col" class="p-2">Aparelhos compatíveis</th>
               <th scope="col" class="p-2 text-end">Ações</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in data.items" :key="item.id" class="border-t border-default">
-              <td class="min-w-44 p-2">
-                <div class="flex items-center gap-2">
-                  <button type="button" class="cursor-pointer rounded text-start font-medium hover:underline"
+              <td class="p-2 min-w-30">
+                  <button type="button" class="flex items-center gap-2 cursor-pointer rounded text-start font-medium hover:underline"
                     :disabled="loadingEditor" @click="editControl(item.id)">
                     <UIcon :name="item.active ? 'i-lucide-check' : 'i-lucide-minus'" aria-hidden="true"
                       class="size-4 shrink-0" :class="item.active ? 'text-success' : 'text-muted'" />
                     <span class="sr-only">{{ item.active ? 'Ativo' : 'Inativo' }}</span>
                     <IconCategory :item />
                     {{ item.isDraft ? 'Rascunho' : item.vipoCode }}
-
                   </button>
-                </div>
+              </td>
+              <td class="p-2 min-w-30">
+                {{ item.brands.map(brand => brand.name).join(', ') || '—' }}
               </td>
               <td class="p-2">
-                <div>{{ item.brands.map(brand => brand.name).join(', ') || '—' }}</div>
                 <div v-if="item.models.length" class="text-muted">{{ item.models.join(', ') }}</div>
               </td>
               <td class="p-2 text-end">
