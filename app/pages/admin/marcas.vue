@@ -80,7 +80,7 @@ async function confirmDelete() {
     <UAlert v-if="status === 'error'" color="error" title="Não foi possível carregar as marcas." />
     <p v-else-if="status === 'pending'">Carregando…</p>
     <table class="w-full text-left text-sm">
-      <thead><tr><th scope="col" class="p-2">Nome</th><th scope="col" class="p-2">Ações</th></tr></thead>
+      <thead><tr><th scope="col" class="p-2">Nome</th><th scope="col" class="p-2 text-end">Ações</th></tr></thead>
       <tbody>
         <tr v-for="brand in brands" :key="brand.id" class="border-t border-default">
           <td colspan="2" v-if="editingId === brand.id" class="p-2">
@@ -92,11 +92,14 @@ async function confirmDelete() {
           </td>
           <template v-else>
             <td class="p-2">{{ brand.name }}</td>
-            <td class="p-2">
-              <div class="flex flex-wrap gap-1">
-                <UButton size="sm" variant="ghost" :disabled="pending" @click="edit(brand)">Editar</UButton>
-                <UButton size="sm" variant="ghost" color="error" :disabled="pending" @click="askDelete(brand)">Apagar</UButton>
-              </div>
+            <td class="p-2 text-end">
+              <UDropdownMenu :modal="false" :items="[
+                { label: 'Editar', icon: 'i-lucide-pencil', onSelect: () => edit(brand) },
+                { label: 'Apagar', icon: 'i-lucide-trash-2', color: 'error', onSelect: () => askDelete(brand) },
+              ]" :content="{ align: 'end' }">
+                <UButton type="button" icon="i-lucide-ellipsis-vertical" color="neutral" variant="ghost"
+                  :aria-label="`Ações de ${brand.name}`" :disabled="pending" />
+              </UDropdownMenu>
             </td>
           </template>
         </tr>

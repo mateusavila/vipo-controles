@@ -2,7 +2,7 @@ export interface Control {
   id: string
   vipoCode: string
   name: string
-  category: 'tv' | 'ac'
+  category: 'tv' | 'ac' | 'receptor'
   originalRemoteCode: string | null
   photoUrl: string | null
   notes: string | null
@@ -17,3 +17,12 @@ export interface ControlsResponse {
   page: number
   pageSize: number
 }
+
+export interface ModelSuggestion {
+  model: string
+  source: string
+}
+
+export type ControlImageAnalysis =
+  | { state: 'available' | 'running' | 'unavailable' }
+  | { state: 'done', suggestions: ModelSuggestion[] }

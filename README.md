@@ -40,3 +40,15 @@ As listagens aceitam `page`, `pageSize`, `name`, `brand`, `brandId`, `model`, `v
 Quando o visitante confirmar uma busca, envie `GET /api/controls?q=Sony%20Bravia&track=1`. Use `track=1` só no envio confirmado. Paginação, carregamento inicial, autocomplete e requisições repetidas devem omitir o parâmetro. Somente a primeira página registra buscas com termo ou filtros. O ranking conta uma ocorrência por busca para cada controle correspondente, incluindo os das demais páginas. Os termos são consolidados por caixa e espaços. Termos sem retorno entram no ranking de termos e no contador de buscas sem resultado.
 
 A primeira página pública sem filtros usa cache do Nitro por 60 segundos. Buscas, filtros e outras páginas consultam o banco. A home registra uma busca ao enviar o campo de texto ou selecionar uma marca. A paginação e a limpeza dos filtros não incrementam o ranking.
+
+## Sugerir modelos pela foto
+
+1. No [painel da OpenAI](https://platform.openai.com/settings/organization/projects), seleciona ou cria o projeto Vipo. Dentro dele, abre **API Keys → Create new secret key** e copia a chave.
+2. Define `NUXT_OPENAI_API_KEY` no `.env` local e nas variáveis privadas do ambiente de produção. Reinicia o servidor após configurar.
+3. Roda `bun run db:migrate`. No admin, salva o controle com uma foto JPG, PNG ou WebP, reabre a edição e clica em **Sugerir modelos pela foto**. Revisa as fontes, adiciona as sugestões e salva o formulário.
+
+A integração usa GPT-6 Luna e permite até uma chamada de ferramenta de busca por análise. Cada controle tem uma análise concluída, inclusive sem sugestões. Em caso de falha no serviço, é possível tentar de novo. O teto é de 50 tentativas por mês (UTC), incluindo falhas. Esse é um limite de chamadas no aplicativo. Uma tentativa que falha ou atinge o timeout pode ter sido processada e cobrada pela OpenAI. A exclusão de um controle não devolve tentativas à cota mensal.
+
+## Upload de fotos
+
+O servidor converte novos PNGs em WebP antes de gravar, mantendo dimensões e transparência. O PNG de entrada pode ter até 3 MiB e 16 megapixels. O arquivo salvo pode ter até 750 KiB. JPG, WebP e AVIF seguem com o limite de 750 KiB no upload. O processamento usa Sharp no runtime Node.js.

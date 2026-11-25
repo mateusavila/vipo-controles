@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { photoMaxBytes, remoteFields, type RemoteFields } from '~~/shared/catalog'
+import type { ControlImageAnalysis, ModelSuggestion } from '~~/shared/types'
+import { photoMaxBytes, pngUploadMaxBytes, remoteFields, type RemoteFields } from '~~/shared/catalog'
 
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
@@ -12,7 +13,11 @@ const { data, status, error, refresh } = await useFetch('/api/admin/controls', {
 const { data: brands, error: brandsError, refresh: refreshBrands } = await useFetch('/api/admin/brands')
 const brandOptions = computed(() => (brands.value ?? []).map(brand => ({ label: brand.name, value: brand.id })))
 
-const categories = [{ label: 'TV', value: 'tv' }, { label: 'Ar-condicionado', value: 'ac' }]
+const categories = [
+  { label: 'TV', value: 'tv' },
+  { label: 'Ar-condicionado', value: 'ac' },
+  { label: 'Receptor', value: 'receptor' },
+]
 const showEditor = ref(false)
 const loadingEditor = ref(false)
 const saving = ref(false)
@@ -24,12 +29,45 @@ const removePhoto = ref(false)
 const submitError = ref('')
 const actionError = ref('')
 const savedMessage = ref('')
-const deleteTarget = ref<{ id: string, name: string }>()
+const deleteTarget = ref<{ id: string, vipoCode: string }>()
 const showDelete = ref(false)
 const form = reactive<RemoteFields>(emptyForm())
 
+const imageAnalysis = ref<ControlImageAnalysis>()
+const analysisBusy = ref(false)
+const analysisError = ref('')
+const addedSuggestions = ref(false)
+const fetchAnalysis = $fetch as unknown as (
+  url: string, options: { method: 'GET' | 'POST', retry: 0 },
+) => Promise<ControlImageAnalysis>
+
+async function loadAnalysis(method: 'GET' | 'POST') {
+  const id = editingId.value
+  if (!id || analysisBusy.value) return
+  analysisBusy.value = true
+  analysisError.value = ''
+  try {
+    imageAnalysis.value = await fetchAnalysis(`/api/admin/controls/${id}/suggest-models`, { method, retry: 0 })
+  } catch (error) {
+    const failure = error as { data?: { message?: string } }
+    analysisError.value = failure.data?.message || 'Não foi possível consultar a análise. Tenta novamente.'
+  } finally {
+    analysisBusy.value = false
+  }
+}
+
+function addSuggestions(suggestions: ModelSuggestion[]) {
+  const models = new Map(form.models.map(model => [model.trim().toLowerCase(), model]))
+  for (const { model } of suggestions) {
+    if (models.size >= 100) break
+    if (!models.has(model.toLowerCase())) models.set(model.toLowerCase(), model)
+  }
+  form.models = [...models.values()]
+  addedSuggestions.value = true
+}
+
 function emptyForm(): RemoteFields {
-  return { name: '', vipoCode: '', category: 'tv', originalRemoteCode: '', notes: '', active: true, brandIds: [], models: [] }
+  return { vipoCode: '', category: 'tv', notes: '', active: true, brandIds: [], models: [] }
 }
 
 function applyFilters() {
@@ -44,6 +82,9 @@ function resetFilters() {
 
 function createControl() {
   Object.assign(form, emptyForm())
+  imageAnalysis.value = undefined
+  analysisError.value = ''
+  addedSuggestions.value = false
   editingId.value = undefined
   photoUrl.value = null
   file.value = undefined
@@ -55,10 +96,10 @@ function createControl() {
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  const request = error as { statusCode?: number }
+  const request = error as { statusCode?: number, data?: { message?: string } }
   if (request.statusCode === 409) return 'Já existe um controle com esse código Vipo.'
   if (request.statusCode === 404) return 'Este controle já não está no catálogo.'
-  if (request.statusCode === 400) return 'Revise os campos e confira o formato e o tamanho da foto.'
+  if (request.statusCode === 400) return request.data?.message || 'Revise os campos e confira o formato e o tamanho da foto.'
   return fallback
 }
 
@@ -71,15 +112,14 @@ async function editControl(id: string) {
     editingId.value = id
     photoUrl.value = control.photoUrl
     Object.assign(form, {
-      name: control.name,
       vipoCode: control.vipoCode,
       category: control.category,
-      originalRemoteCode: control.originalRemoteCode ?? '',
       notes: control.notes ?? '',
       active: control.active,
       brandIds: control.brands.map(brand => brand.id),
       models: [...control.models],
     })
+    if (photoUrl.value) void loadAnalysis('GET')
   } catch (error) {
     actionError.value = errorMessage(error, 'Não foi possível abrir o controle.')
   } finally {
@@ -88,7 +128,7 @@ async function editControl(id: string) {
 }
 
 async function save() {
-  if (saving.value) return
+  if (saving.value || analysisBusy.value) return
   submitError.value = ''
   const validated = remoteFields.safeParse(form)
   if (!validated.success) {
@@ -96,9 +136,13 @@ async function save() {
     submitError.value = issue?.message ?? 'Confira os dados do controle.'
     return
   }
-  if (file.value && file.value.size > photoMaxBytes) {
-    submitError.value = 'A foto deve ter até 750 KiB.'
-    return
+  if (file.value) {
+    const isPng = file.value.type === 'image/png' || /\.png$/i.test(file.value.name)
+    const limit = isPng ? pngUploadMaxBytes : photoMaxBytes
+    if (file.value.size > limit) {
+      submitError.value = isPng ? 'O PNG deve ter até 3 MiB.' : 'A foto deve ter até 750 KiB.'
+      return
+    }
   }
 
   saving.value = true
@@ -128,7 +172,7 @@ function fileToBase64(image: File) {
   })
 }
 
-function askDelete(control: { id: string, name: string }) {
+function askDelete(control: { id: string, vipoCode: string }) {
   deleteTarget.value = control
   actionError.value = ''
   savedMessage.value = ''
@@ -164,7 +208,7 @@ async function deleteSelected() {
     <form class="admin-panel" @submit.prevent="applyFilters">
       <div class="flex items-stretch gap-2">
         <UInput v-model="search" class="min-w-0 flex-1" maxlength="160" aria-label="Buscar controles"
-          placeholder="Nome, marca, modelo ou código">
+          placeholder="Marca, modelo ou código">
           <template #trailing>
             <UButton v-if="search || appliedSearch" type="button" icon="i-lucide-x" size="xs"
               color="neutral" variant="ghost" aria-label="Limpar busca" @click="resetFilters" />
@@ -186,7 +230,7 @@ async function deleteSelected() {
           <thead>
             <tr>
               <th scope="col" class="whitespace-nowrap p-2"># Vipo</th>
-              <th scope="col" class="p-2">Nome</th>
+              <th scope="col" class="p-2">Controle</th>
               <th scope="col" class="p-2">Aparelhos compatíveis</th>
               <th scope="col" class="p-2 text-end">Ações</th>
             </tr>
@@ -201,7 +245,7 @@ async function deleteSelected() {
                   <span class="sr-only">{{ item.active ? 'Ativo' : 'Inativo' }}</span>
                   <IconCategory :item />
                   <button type="button" class="cursor-pointer rounded text-start font-medium hover:underline"
-                    :disabled="loadingEditor" @click="editControl(item.id)">{{ item.name }}</button>
+                    :disabled="loadingEditor" @click="editControl(item.id)">{{ categories.find(category => category.value === item.category)?.label }}</button>
                 </div>
               </td>
               <td class="p-2">
@@ -214,7 +258,7 @@ async function deleteSelected() {
                   { label: 'Apagar', icon: 'i-lucide-trash-2', color: 'error', onSelect: () => askDelete(item) },
                 ]" :content="{ align: 'end' }">
                   <UButton type="button" icon="i-lucide-ellipsis-vertical" color="neutral" variant="ghost"
-                    :aria-label="`Ações de ${item.name}`" :disabled="loadingEditor" />
+                    :aria-label="`Ações de ${item.vipoCode}`" :disabled="loadingEditor" />
                 </UDropdownMenu>
               </td>
             </tr>
@@ -224,7 +268,7 @@ async function deleteSelected() {
       <UPagination v-if="data && data.total > pageSize" v-model:page="page" :total="data.total" :items-per-page="pageSize" />
     </section>
 
-    <UModal v-model:open="showEditor" :title="editingId ? 'Editar controle' : 'Novo controle'" :dismissible="!saving" :close="!saving" :ui="{ content: 'max-w-4xl' }">
+    <UModal v-model:open="showEditor" :title="editingId ? 'Editar controle' : 'Novo controle'" :dismissible="!saving && !analysisBusy" :close="!saving && !analysisBusy" :ui="{ content: 'max-w-4xl' }">
       <template #body>
         <form class="space-y-4" @submit.prevent="save">
           <fieldset :disabled="saving" class="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
@@ -237,15 +281,12 @@ async function deleteSelected() {
                 <UButton v-if="removePhoto && !file" type="button" size="sm" color="neutral" variant="ghost" @click="void (removePhoto = false)">Manter foto atual</UButton>
                 <UFileUpload v-model="file" accept="image/jpeg,image/png,image/webp,image/avif"
                   :label="photoUrl ? 'Escolher nova foto' : 'Escolher foto'"
-                  description="JPG, PNG, WebP ou AVIF de até 750 KiB" layout="grid" class="w-full"
+                  description="PNG até 3 MiB, convertido em WebP. JPG, WebP ou AVIF até 750 KiB." layout="grid" class="w-full"
                   :ui="{ base: photoUrl && !removePhoto && !file ? '' : 'aspect-[3/4]', fileLeadingAvatar: '[&_img]:object-contain' }" />
               </UFormField>
 
             </div>
             <div class="min-w-0 space-y-4">
-              <UFormField label="Nome" required>
-                <UInput v-model="form.name" class="w-full" maxlength="160" required />
-              </UFormField>
               <div class="grid gap-3 sm:grid-cols-2">
                 <UFormField label="Código Vipo" required>
                   <UInput v-model="form.vipoCode" class="w-full" maxlength="60" required />
@@ -255,9 +296,6 @@ async function deleteSelected() {
                 </UFormField>
               </div>
 
-              <UFormField label="Código do controle original">
-                <UInput v-model="form.originalRemoteCode" class="w-full" maxlength="80" />
-              </UFormField>
               <section class="space-y-2" aria-label="Aparelhos compatíveis">
                 <h3 class="text-sm font-semibold">Aparelhos compatíveis</h3>
                 <div v-if="brandsError" class="flex flex-wrap items-center gap-2">
@@ -276,6 +314,43 @@ async function deleteSelected() {
                   <UInputTags v-model="form.models" :max="100" :max-length="140" add-on-blur
                     placeholder="Ex.: Sky-7067" class="w-full" />
                 </UFormField>
+                <div class="space-y-2">
+                  <p v-if="!editingId || !photoUrl || file || removePhoto" class="text-sm text-muted">
+                    Salva o controle com a foto antes de sugerir modelos.
+                  </p>
+                  <p v-if="imageAnalysis?.state === 'unavailable'" class="text-sm text-muted">
+                    A análise por foto precisa ser configurada no servidor.
+                  </p>
+                  <UButton type="button" size="sm" variant="outline" icon="i-lucide-sparkles"
+                    :loading="analysisBusy" :disabled="!editingId || !photoUrl || !!file || removePhoto || imageAnalysis?.state !== 'available'"
+                    @click="loadAnalysis('POST')">
+                    {{ imageAnalysis?.state === 'done' ? 'Foto já analisada' : 'Sugerir modelos pela foto' }}
+                  </UButton>
+                  <UButton v-if="imageAnalysis?.state === 'running' || (!imageAnalysis && analysisError)"
+                    type="button" size="sm" variant="ghost" :disabled="analysisBusy" @click="loadAnalysis('GET')">
+                    Atualizar situação
+                  </UButton>
+                  <p v-if="imageAnalysis?.state === 'running'" class="text-sm text-muted">Análise em andamento.</p>
+                  <p v-if="analysisError" role="alert" class="text-sm text-error">{{ analysisError }}</p>
+                  <template v-if="imageAnalysis?.state === 'done'">
+                    <p v-if="!imageAnalysis.suggestions.length" class="text-sm text-muted">
+                      Análise concluída sem sugestões verificáveis. Podes preencher os modelos manualmente.
+                    </p>
+                    <template v-else>
+                      <p class="text-sm text-muted">Confere os modelos e suas fontes antes de adicionar.</p>
+                      <ul class="max-h-36 list-disc overflow-auto pl-5 text-sm">
+                        <li v-for="suggestion in imageAnalysis.suggestions" :key="suggestion.model">
+                          {{ suggestion.model }}
+                          <a :href="suggestion.source" class="underline" target="_blank" rel="noopener noreferrer">Fonte</a>
+                        </li>
+                      </ul>
+                      <UButton type="button" size="sm" variant="soft" :disabled="addedSuggestions || form.models.length >= 100"
+                        @click="addSuggestions(imageAnalysis.suggestions)">
+                        {{ addedSuggestions ? 'Sugestões adicionadas ao formulário' : 'Adicionar modelos' }}
+                      </UButton>
+                    </template>
+                  </template>
+                </div>
               </section>
 
               <UFormField label="Observações"><UTextarea v-model="form.notes" class="w-full" maxlength="2000" /></UFormField>
@@ -284,15 +359,15 @@ async function deleteSelected() {
           </fieldset>
           <UAlert v-if="submitError" color="error" :title="submitError" role="alert" />
           <div class="flex justify-end gap-2">
-            <UButton type="button" color="neutral" variant="ghost" :disabled="saving" @click="void (showEditor = false)">Cancelar</UButton>
-            <UButton type="submit" :loading="saving">Salvar</UButton>
+            <UButton type="button" color="neutral" variant="ghost" :disabled="saving || analysisBusy" @click="void (showEditor = false)">Cancelar</UButton>
+            <UButton type="submit" :loading="saving" :disabled="analysisBusy">Salvar</UButton>
           </div>
         </form>
       </template>
     </UModal>
 
     <UModal v-model:open="showDelete" title="Apagar controle" :dismissible="!deleting" :close="!deleting"
-      :description="`O controle ${deleteTarget?.name ?? ''} e sua foto serão apagados permanentemente.`">
+      :description="`O controle ${deleteTarget?.vipoCode ?? ''} e sua foto serão apagados permanentemente.`">
       <template #footer>
         <UButton color="neutral" variant="ghost" :disabled="deleting" @click="void (showDelete = false)">Cancelar</UButton>
         <UButton color="error" :loading="deleting" @click="deleteSelected">Apagar controle</UButton>

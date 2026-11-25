@@ -4,7 +4,7 @@ import { blob, check, index, integer, primaryKey, sqliteTable, text } from 'driz
 export const remoteControls = sqliteTable('remote_controls', {
   id: text('id').primaryKey().notNull().$defaultFn(() => crypto.randomUUID()),
   vipoCode: text('vipo_code').notNull().unique(),
-  category: text('category', { enum: ['tv', 'ac'] }).notNull(),
+  category: text('category', { enum: ['tv', 'ac', 'receptor'] }).notNull(),
   name: text('name').notNull(),
   originalRemoteCode: text('original_remote_code'),
   photoUrl: text('photo_url'),
@@ -14,7 +14,7 @@ export const remoteControls = sqliteTable('remote_controls', {
   models: text('models', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
 }, table => [
-  check('remote_controls_category_check', sql`${table.category} IN ('tv', 'ac')`),
+  check('remote_controls_category_check', sql`${table.category} IN ('tv', 'ac', 'receptor')`),
 ])
 
 export const brands = sqliteTable('brands', {

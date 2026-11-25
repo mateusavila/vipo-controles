@@ -1,5 +1,32 @@
 import { createClient } from '@libsql/client'
 
+function createControls(table: string) {
+  return `CREATE TABLE IF NOT EXISTS ${table} (
+      id TEXT PRIMARY KEY NOT NULL, vipo_code TEXT NOT NULL UNIQUE,
+      category TEXT NOT NULL CHECK (category IN ('tv', 'ac', 'receptor')),
+      name TEXT NOT NULL, original_remote_code TEXT, photo_url TEXT,
+      photo_bytes BLOB, photo_mime TEXT, notes TEXT,
+      models TEXT NOT NULL DEFAULT '[]', active INTEGER NOT NULL DEFAULT 1
+    )`
+}
+
+function createSearchLinks(table: string, parent: string) {
+  return `CREATE TABLE IF NOT EXISTS ${table} (
+      remote_control_id TEXT NOT NULL REFERENCES ${parent}(id) ON DELETE CASCADE,
+      search_term_id TEXT NOT NULL REFERENCES search_terms(id) ON DELETE CASCADE,
+      search_count INTEGER NOT NULL,
+      PRIMARY KEY (remote_control_id, search_term_id)
+    )`
+}
+
+function createBrandLinks(table: string, parent: string) {
+  return `CREATE TABLE IF NOT EXISTS ${table} (
+      remote_control_id TEXT NOT NULL REFERENCES ${parent}(id) ON DELETE CASCADE,
+      brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE RESTRICT,
+      PRIMARY KEY (remote_control_id, brand_id)
+    )`
+}
+
 const url = process.env.NUXT_IDENTITY_DATABASE_URL
 if (!url) throw new Error('Defina NUXT_IDENTITY_DATABASE_URL.')
 
@@ -11,12 +38,7 @@ try {
       password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member',
       blocked INTEGER NOT NULL DEFAULT 0, session_version INTEGER NOT NULL DEFAULT 1
     )`,
-    `CREATE TABLE IF NOT EXISTS remote_controls (
-      id TEXT PRIMARY KEY NOT NULL, vipo_code TEXT NOT NULL UNIQUE,
-      category TEXT NOT NULL CHECK (category IN ('tv', 'ac')),
-      name TEXT NOT NULL, original_remote_code TEXT, photo_url TEXT,
-      photo_bytes BLOB, photo_mime TEXT, notes TEXT, active INTEGER NOT NULL DEFAULT 1
-    )`,
+    createControls('remote_controls'),
     `CREATE TABLE IF NOT EXISTS brands (
       id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL COLLATE NOCASE UNIQUE
     )`,
@@ -26,12 +48,17 @@ try {
       last_searched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CHECK (search_count >= 1 AND zero_result_count BETWEEN 0 AND search_count)
     )`,
-    `CREATE TABLE IF NOT EXISTS remote_search_terms (
-      remote_control_id TEXT NOT NULL REFERENCES remote_controls(id) ON DELETE CASCADE,
-      search_term_id TEXT NOT NULL REFERENCES search_terms(id) ON DELETE CASCADE,
-      search_count INTEGER NOT NULL,
-      PRIMARY KEY (remote_control_id, search_term_id)
+    createSearchLinks('remote_search_terms', 'remote_controls'),
+    `CREATE TABLE IF NOT EXISTS control_image_analyses (
+      id TEXT PRIMARY KEY NOT NULL,
+      control_id TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('running', 'done', 'failed')),
+      result TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS control_image_analyses_once
+      ON control_image_analyses (control_id) WHERE state IN ('running', 'done')`,
+    'CREATE INDEX IF NOT EXISTS control_image_analyses_created_idx ON control_image_analyses (created_at)',
   ], 'write')
   const { rows } = await client.execute('PRAGMA table_info(remote_controls)')
   for (const [name, type] of [['photo_bytes', 'BLOB'], ['photo_mime', 'TEXT']]) {
@@ -47,11 +74,7 @@ try {
     if (!columns.rows.some(column => column.name === 'models')) {
       await tx.execute("ALTER TABLE remote_controls ADD COLUMN models TEXT NOT NULL DEFAULT '[]'")
     }
-    await tx.execute(`CREATE TABLE IF NOT EXISTS remote_control_brands (
-      remote_control_id TEXT NOT NULL REFERENCES remote_controls(id) ON DELETE CASCADE,
-      brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE RESTRICT,
-      PRIMARY KEY (remote_control_id, brand_id)
-    )`)
+    await tx.execute(createBrandLinks('remote_control_brands', 'remote_controls'))
     await tx.execute('CREATE INDEX IF NOT EXISTS remote_control_brands_brand_id_idx ON remote_control_brands (brand_id)')
 
     if (compatibilities.rows.length) {
@@ -87,6 +110,31 @@ try {
       )`)
       await tx.execute('DROP TABLE remote_compatibilities')
     }
+    const schema = await tx.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'remote_controls'")
+    if (!String(schema.rows[0]?.sql).includes("'receptor'")) {
+      const controlColumns = 'id, vipo_code, category, name, original_remote_code, photo_url, photo_bytes, photo_mime, notes, models, active'
+      await tx.execute(createControls('remote_controls_new'))
+      await tx.execute(createBrandLinks('remote_control_brands_new', 'remote_controls_new'))
+      await tx.execute(createSearchLinks('remote_search_terms_new', 'remote_controls_new'))
+
+      await tx.execute(`INSERT INTO remote_controls_new (${controlColumns}) SELECT ${controlColumns} FROM remote_controls`)
+      await tx.execute(`INSERT INTO remote_control_brands_new (remote_control_id, brand_id)
+        SELECT remote_control_id, brand_id FROM remote_control_brands`)
+      await tx.execute(`INSERT INTO remote_search_terms_new (remote_control_id, search_term_id, search_count)
+        SELECT remote_control_id, search_term_id, search_count FROM remote_search_terms`)
+
+      await tx.execute('DROP TABLE remote_control_brands')
+      await tx.execute('DROP TABLE remote_search_terms')
+      await tx.execute('DROP TABLE remote_controls')
+      await tx.execute('ALTER TABLE remote_controls_new RENAME TO remote_controls')
+      await tx.execute('ALTER TABLE remote_control_brands_new RENAME TO remote_control_brands')
+      await tx.execute('ALTER TABLE remote_search_terms_new RENAME TO remote_search_terms')
+      await tx.execute('CREATE INDEX remote_control_brands_brand_id_idx ON remote_control_brands (brand_id)')
+
+      const check = await tx.execute('PRAGMA foreign_key_check')
+      if (check.rows.length) throw new Error('A migração deixou vínculos inválidos.')
+    }
+
     await tx.commit()
   } finally {
     tx.close()

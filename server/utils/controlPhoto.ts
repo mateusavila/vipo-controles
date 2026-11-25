@@ -1,16 +1,41 @@
-import { photoMaxBytes } from '../../shared/catalog'
+import sharp from 'sharp'
+import { photoMaxBytes, pngUploadMaxBytes } from '../../shared/catalog'
 
-export function controlPhoto(encoded: string, id: string) {
-  const bytes = Buffer.from(encoded, 'base64')
-  const mime = detectMime(bytes)
-  if (!mime || bytes.length > photoMaxBytes) {
-    throw createError({ statusCode: 400, message: 'Use JPG, PNG, WebP ou AVIF de até 750 KiB.' })
+export async function controlPhoto(encoded: string, id: string) {
+  const input = Buffer.from(encoded, 'base64')
+  const mime = detectMime(input)
+  if (!mime) throw createError({ statusCode: 400, message: 'Use uma foto JPG, PNG, WebP ou AVIF válida.' })
+
+  let bytes = input
+  let outputMime = mime
+  if (mime === 'image/png') {
+    if (input.length > pngUploadMaxBytes) {
+      throw createError({ statusCode: 400, message: 'O PNG deve ter até 3 MiB.' })
+    }
+
+    try {
+      bytes = await sharp(input, { limitInputPixels: 16_000_000 })
+        .webp({ quality: 88, alphaQuality: 100 })
+        .toBuffer()
+      outputMime = 'image/webp'
+    } catch {
+      throw createError({ statusCode: 400, message: 'Não foi possível converter o PNG. Confira se a imagem abre normalmente e se tem até 16 megapixels.' })
+    }
+  }
+
+  if (bytes.length > photoMaxBytes) {
+    throw createError({
+      statusCode: 400,
+      message: mime === 'image/png'
+        ? 'A foto ficou acima de 750 KiB após a conversão. Envie um PNG com dimensões menores.'
+        : 'Fotos em JPG, WebP ou AVIF devem ter até 750 KiB.',
+    })
   }
 
   return {
     photoUrl: `/api/controls/${id}/photo`,
     photoBytes: bytes,
-    photoMime: mime,
+    photoMime: outputMime,
   }
 }
 

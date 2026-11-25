@@ -1,7 +1,7 @@
 import { and, asc, count, eq, exists, getTableColumns, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { z } from 'zod'
-import { photoMaxBytes, remoteFields } from '../../shared/catalog'
+import { pngUploadMaxBytes, remoteFields } from '../../shared/catalog'
 import { brands, remoteControlBrands, remoteControls, remoteSearchTerms, searchTerms } from '../database/schema'
 
 const controls = remoteControls
@@ -23,9 +23,11 @@ const listQuery = z.object({
 })
 
 const writeInput = remoteFields.extend({
+  name: z.string().trim().min(1).max(160).optional(),
+  originalRemoteCode: z.string().trim().max(80).optional(),
   photo: z.union([
     z.null(),
-    z.string().max(Math.ceil(photoMaxBytes / 3) * 4).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+    z.string().max(Math.ceil(pngUploadMaxBytes / 3) * 4).regex(/^[A-Za-z0-9+/]+={0,2}$/),
   ]).optional(),
 })
 
@@ -95,7 +97,7 @@ async function queryControls(event: H3Event, publicOnly: boolean, query: ListQue
   }
   if (model) fields.push(modelMatch(model))
   if (term) {
-    const controlText = sql`${controls.name} || ' ' || ${controls.vipoCode} || ' ' || coalesce(${controls.originalRemoteCode}, '') || ' ' || coalesce(${controls.notes}, '') || ' ' || CASE WHEN ${controls.category} = 'tv' THEN 'tv televisão' ELSE 'ac ar condicionado ar-condicionado' END`
+    const controlText = sql`${controls.name} || ' ' || ${controls.vipoCode} || ' ' || coalesce(${controls.originalRemoteCode}, '') || ' ' || coalesce(${controls.notes}, '') || ' ' || CASE ${controls.category} WHEN 'tv' THEN 'tv televisão' WHEN 'ac' THEN 'ac ar condicionado ar-condicionado' WHEN 'receptor' THEN 'receptor' END`
     for (const word of term.split(' ')) {
       fields.push(or(contains(controlText, word), brandMatch(contains(brands.name, word)), modelMatch(word))!)
     }
@@ -169,7 +171,7 @@ export async function saveControl(event: H3Event, existingId?: string) {
   const id = existingId ?? crypto.randomUUID()
   const photoFields = photo === null
     ? { photoUrl: null, photoBytes: null, photoMime: null }
-    : photo === undefined ? {} : controlPhoto(photo, id)
+    : photo === undefined ? {} : await controlPhoto(photo, id)
   const db = identityDb(event)
   const brandIds = [...new Set(selectedBrands)]
   const uniqueModels = [...new Map(models.map(model => [model.toLowerCase(), model])).values()]
@@ -184,12 +186,16 @@ export async function saveControl(event: H3Event, existingId?: string) {
         }
       }
       if (existingId) {
-        const result = await tx.update(controls).set(values)
+        const result = await tx.update(controls).set({
+          ...values,
+          name: values.name ?? sql`CASE WHEN ${controls.name} = 'Controle ' || ${controls.vipoCode}
+            THEN ${'Controle ' + fields.vipoCode} ELSE ${controls.name} END`,
+        })
           .where(eq(controls.id, id)).run()
         if (!result.rowsAffected) throw notFound()
         await tx.delete(links).where(eq(links.remoteControlId, id)).run()
       } else {
-        await tx.insert(controls).values({ id, ...values }).run()
+        await tx.insert(controls).values({ id, ...values, name: values.name ?? `Controle ${fields.vipoCode}` }).run()
       }
       if (brandIds.length) {
         await tx.insert(links).values(brandIds.map(brandId => ({ remoteControlId: id, brandId }))).run()
