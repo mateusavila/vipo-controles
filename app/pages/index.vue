@@ -83,7 +83,7 @@ function clearEmptySearch(value: string) {
 
       <section aria-label="Resultados da busca" :aria-busy="pending">
         <Grid v-if="pending">
-          <USkeleton v-for="i in 6" :key="i" class="h-66 w-full" />
+          <USkeleton v-for="i in 12" :key="i" class="h-58 w-full" />
         </Grid>
         <div v-else-if="error" class="mt-6 text-center">
           <UAlert color="error" title="Não foi possível carregar os controles." />

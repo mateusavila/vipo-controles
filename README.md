@@ -58,3 +58,10 @@ O servidor converte novos PNGs em WebP antes de gravar, mantendo dimensões e tr
 Em **Novo controle**, seleciona a imagem. O upload salva um rascunho privado e libera os campos na mesma janela. Para arquivos como `Semp Toshiba 39277.png`, o formulário sugere o código e a marca cadastrada. Podes revisar as sugestões de modelos e finalizar com **Salvar**. Rascunhos interrompidos ficam disponíveis no admin.
 
 Roda `bun run db:migrate` antes de usar esta versão. A análise é limitada por controle e pelo hash dos bytes da foto salva. Reenviar uma foto idêntica reaproveita o resultado. Uma foto diferente libera uma análise após salvar a troca. Na migração, análises anteriores são associadas à foto disponível no momento, pois o formato anterior não guardava seu hash.
+
+## Duração da sessão administrativa
+
+O login dura até 30 dias a partir da autenticação. Mantém o mesmo
+`NUXT_SESSION_PASSWORD` no ambiente de produção entre deploys. Alterar esse
+segredo invalida as sessões emitidas anteriormente. Depois de publicar esta
+alteração, entra novamente para receber o cookie com a nova expiração.

@@ -6,6 +6,10 @@ export default defineNuxtConfig({
   ],
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
+    session: {
+      password: '',
+      maxAge: 60 * 60 * 24 * 30
+    },
     openaiApiKey: '',
     identity: {
       databaseUrl: '',

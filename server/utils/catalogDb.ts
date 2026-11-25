@@ -9,7 +9,7 @@ const links = remoteControlBrands
 const { photoBytes: _bytes, photoMime: _mime, ...controlFields } = getTableColumns(controls)
 
 const filter = z.string().trim().max(160).optional()
-const defaultPageSize = 20
+const defaultPageSize = 12
 const listQuery = z.object({
   page: z.coerce.number().int().min(1).max(1_000_000).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(defaultPageSize),

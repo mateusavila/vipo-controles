@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { ControlImageAnalysis, ModelSuggestion } from '../../shared/types'
 import { remoteControls } from '../database/schema'
 
-const monthlyLimit = 50
+const monthlyLimit = 10000
 
 const storedSuggestions = z.array(z.object({ model: z.string(), source: z.string() }))
 const responseSchema = z.object({
