@@ -6,6 +6,11 @@ export const identityUsers = sqliteTable('identity_users', {
   blocked: integer('blocked', { mode: 'boolean' }).notNull().default(false),
   sessionVersion: integer('session_version').notNull().default(1)
 })
-
+export const identityPasswordTokens = sqliteTable('identity_password_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  userId: text('user_id').notNull().references(() => identityUsers.id, { onDelete: 'cascade' }),
+  sessionVersion: integer('session_version').notNull(),
+  createdAt: integer('created_at').notNull(),
+})
 
 export * from './catalog-schema'

@@ -12,9 +12,16 @@ export default defineNuxtConfig({
     },
     openaiApiKey: '',
     identity: {
+      webhookUrl: '',
+      webhookSecret: '',
+      appUrl: 'https://vipo-controles.vercel.app',
       databaseUrl: '',
       databaseToken: ''
     }
+  },
+  routeRules: {
+    '/confirmar-email': { headers: { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } },
+    '/api/identity/password-token': { headers: { 'cache-control': 'no-store' } },
   },
   app: {
     head: {

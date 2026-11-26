@@ -65,3 +65,33 @@ O login dura até 30 dias a partir da autenticação. Mantém o mesmo
 `NUXT_SESSION_PASSWORD` no ambiente de produção entre deploys. Alterar esse
 segredo invalida as sessões emitidas anteriormente. Depois de publicar esta
 alteração, entra novamente para receber o cookie com a nova expiração.
+
+## Convites e troca de senha
+
+Execute `bun run db:migrate` com a conexão do banco de identidade antes de publicar
+a versão que usa os tokens. Configure as variáveis abaixo no ambiente do Nuxt.
+
+```dotenv
+NUXT_IDENTITY_WEBHOOK_URL=https://seu-n8n.exemplo/webhook/vipo-identidade
+NUXT_IDENTITY_WEBHOOK_SECRET=preencha-com-o-mesmo-segredo-do-n8n
+NUXT_IDENTITY_APP_URL=https://vipo-controles.vercel.app
+```
+
+1. No n8n, crie um Webhook **POST** com autenticação Header Auth.
+   Use o header `X-Vipo-Webhook-Secret` e o valor de `NUXT_IDENTITY_WEBHOOK_SECRET`.
+2. Ligue o Webhook diretamente ao nó que envia o e-mail. Use
+   `{{ $json.body.email }}` como destinatário e `{{ $json.body.subject }}` como assunto.
+   No campo HTML em modo **Expression**, cole o conteúdo de `vipo-email-n8n.html`.
+3. Configure a resposta do webhook para aguardar o resultado do envio.
+   Retorne HTTP 2xx após o envio e um status de erro se o nó de e-mail falhar.
+   No Nuxt, use a URL de produção do webhook ativo.
+4. Entre como superadministrador e acesse **Usuários** e clique em **Convidar usuário**. Para testar a
+   recuperação, use **Trocar senha** no login. Convite e recuperação compartilham
+   o template, com título e texto adequados ao fluxo.
+
+O envio tem um intervalo de um minuto por conta. Para reenviar um convite
+pendente, use o mesmo nome e e-mail. Os links não têm prazo de validade e
+permanecem utilizáveis até que a senha seja salva. Ao salvar, os links pendentes
+da conta são invalidados e as sessões anteriores perdem acesso ao painel.
+O webhook recebe o token em texto para montar o e-mail. Restrinja o acesso ao
+histórico de execuções no n8n ou desative o armazenamento dessas execuções.

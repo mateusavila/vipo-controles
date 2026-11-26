@@ -1,0 +1,2 @@
+//# allFunctionsCalledOnLoad
+import{Fn as e,Lt as t,jn as n,pn as r,vn as i}from"#entry";var a={class:`w-full bg-slate-50 font-open`},o=i({__name:`main`,setup(i){return t({link:[{rel:`preload`,as:`image`,type:`image/webp`,href:`/logo-vipo.webp`}]}),(t,i)=>(n(),r(`main`,a,[e(t.$slots,`default`)]))}});export{o as default};

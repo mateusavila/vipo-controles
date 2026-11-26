@@ -7,7 +7,7 @@ const credentials = z.object({ email: z.string().trim().toLowerCase().email(), p
 export default defineEventHandler(async event => {
   const { email, password } = await readValidatedBody(event, credentials.parse)
   const user = await identityDb(event).select().from(identityUsers).where(eq(identityUsers.email, email)).get()
-  if (!user || user.blocked || user.role !== 'superadmin' || !await verifyPassword(user.passwordHash, password)) {
+  if (!user || user.blocked || !user.passwordHash || !await verifyPassword(user.passwordHash, password)) {
     throw createError({ statusCode: 401, message: 'E-mail ou senha inválidos.' })
   }
   await clearUserSession(event)

@@ -28,6 +28,7 @@ async function login() {
         <UFormField label="Senha"><UInput v-model="password" class="w-full" type="password" autocomplete="current-password" required /></UFormField>
         <UAlert v-if="error" color="error" :title="error" role="alert" />
         <UButton type="submit" :loading="busy" block>Entrar</UButton>
+        <UButton to="/trocar-senha" variant="link" block>Trocar senha</UButton>
       </form>
     </UCard>
   </main>

@@ -1,0 +1,1 @@
+import{Kt as e,Pt as t,Zt as n,qt as r}from"#entry";var i=e(async()=>{let e=t();try{await e(`/api/identity/me`)}catch(e){let{statusCode:t}=e;if(t===401)return r(`/login`);throw n({statusCode:503,message:`Não foi possível verificar a sessão. Tenta recarregar a página.`})}});export{i as default};

@@ -39,6 +39,19 @@ try {
       password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member',
       blocked INTEGER NOT NULL DEFAULT 0, session_version INTEGER NOT NULL DEFAULT 1
     )`,
+    `CREATE TABLE IF NOT EXISTS identity_password_tokens (
+      token_hash TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL REFERENCES identity_users(id) ON DELETE CASCADE,
+      session_version INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+    'CREATE INDEX IF NOT EXISTS identity_password_tokens_user_idx ON identity_password_tokens (user_id, session_version, created_at)',
+    `CREATE TRIGGER IF NOT EXISTS identity_password_tokens_cleanup
+      AFTER UPDATE OF session_version ON identity_users
+      WHEN OLD.session_version <> NEW.session_version
+      BEGIN
+        DELETE FROM identity_password_tokens WHERE user_id = NEW.id;
+      END`,
     createControls('remote_controls'),
     `CREATE TABLE IF NOT EXISTS brands (
       id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL COLLATE NOCASE UNIQUE

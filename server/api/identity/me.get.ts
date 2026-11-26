@@ -1,4 +1,4 @@
 export default defineEventHandler(async event => {
-  await requireAdmin(event)
-  return { ok: true }
+  const { role } = await requireAdmin(event)
+  return { ok: true, role }
 })

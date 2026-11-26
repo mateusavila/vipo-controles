@@ -12,7 +12,7 @@ function isActive(path: string) {
 
   return route.path === path || route.path.startsWith(`${path}/`)
 }
-const { clear } = useUserSession()
+const { user, clear } = useUserSession()
 async function logout() {
   await clear()
   await navigateTo('/login')
@@ -23,7 +23,9 @@ async function logout() {
     <header class="admin-header">
       <nav class="flex flex-wrap gap-2" aria-label="Administração">
         <UButton
-          v-for="link in adminLinks"
+          v-for="link in user?.role === 'superadmin'
+            ? [...adminLinks, { label: 'Usuários', to: '/admin/usuarios' }]
+            : adminLinks"
           :key="link.to"
           :to="link.to"
           :exact="link.to === '/admin'"
