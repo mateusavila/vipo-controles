@@ -4,6 +4,11 @@ export default defineNuxtConfig({
     'nuxt-auth-utils',
     '@nuxtjs/critters'
   ],
+  vite: {
+    ssr: {
+      noExternal: ['unctx'],
+    },
+  },
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
     session: {
