@@ -22,7 +22,10 @@ async function login() {
 <template>
   <main class="mx-auto grid min-h-dvh max-w-98 content-center p-5">
     <UCard>
-      <template #header><h1 class="text-xl font-semibold">Administração · Vipo Eletrônica</h1></template>
+      <template #header>
+        <img src="/logo-vipo.webp" alt="Vipo Eletrônica" width="80" height="36" class="max-w-20 mx-auto mb-5">
+        <h1 class="text-xl font-semibold text-center">Administração · Vipo Eletrônica</h1>
+      </template>
       <form class="space-y-4" @submit.prevent="login">
         <UFormField label="E-mail"><UInput v-model="email" class="w-full" type="email" autocomplete="username" required /></UFormField>
         <UFormField label="Senha"><UInput v-model="password" class="w-full" type="password" autocomplete="current-password" required /></UFormField>

@@ -23,7 +23,10 @@ async function requestPassword() {
 <template>
   <main class="mx-auto grid min-h-dvh max-w-md content-center p-5">
     <UCard>
-      <template #header><h1 class="text-xl font-semibold">Trocar senha</h1></template>
+      <template #header>
+        <img src="/logo-vipo.webp" alt="Vipo Eletrônica" width="80" height="36" class="max-w-20 mx-auto mb-5">
+        <h1 class="text-xl font-semibold text-center">Trocar senha</h1>
+      </template>
       <form v-if="!sent" class="space-y-4" @submit.prevent="requestPassword">
         <p class="text-sm text-muted">Informe o e-mail da sua conta para receber o link de confirmação.</p>
         <UFormField label="E-mail" required>
