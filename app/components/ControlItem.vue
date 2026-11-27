@@ -15,6 +15,8 @@ const limit = shallowRef(6)
         v-if="data.photoUrl"
         :src="data.photoUrl"
         :alt="data.name"
+        width="60"
+        height="200"
         class="sm:max-w-16 max-w-full lg:h-full h-auto max-h-50 object-cover sm:rounded-l-[12px] sm:rounded-t-none rounded-t-[12px]">
     </div>
     <div class="w-full p-6 rounded-r-[12px] flex flex-col justify-center">
