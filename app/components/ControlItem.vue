@@ -9,7 +9,7 @@ const limit = shallowRef(6)
 </script>
 
 <template>
-  <div class="w-full flex bg-white rounded-[12px] shadow sm:flex-nowrap flex-wrap">
+  <div class="w-full min-w-0 flex bg-white rounded-[12px] shadow sm:flex-nowrap flex-wrap">
     <div class="sm:w-24 w-full flex justify-center p-4 bg-slate-100 sm:rounded-l-[12px] sm:rounded-t-none rounded-t-[12px]">
       <img
         v-if="data.photoUrl"
@@ -19,7 +19,7 @@ const limit = shallowRef(6)
         height="200"
         class="sm:max-w-16 max-w-full lg:h-full h-auto max-h-50 object-cover sm:rounded-l-[12px] sm:rounded-t-none rounded-t-[12px]">
     </div>
-    <div class="w-full p-6 rounded-r-[12px] flex flex-col justify-center">
+    <div class="w-full min-w-0 [overflow-wrap:anywhere] p-6 rounded-r-[12px] flex flex-col justify-center">
       <p class="my-1.5">Código: <IconCategory :item="data" /> <strong>{{data.vipoCode}}</strong></p>
       <p class="my-1.5">Marca(s): <strong>{{ data.brands.map(({name}) => name).join(", ")}}</strong></p>
       <template v-if="data.models.length">

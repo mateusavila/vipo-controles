@@ -63,19 +63,76 @@ async function attachBrands(db: Db, rows: ControlRow[]) {
 
 type ListQuery = z.output<typeof listQuery>
 
-const firstCatalogPage = defineCachedFunction(
-  (event: H3Event) => queryControls(event, true, listQuery.parse({})),
-  { name: 'public-controls-first-page', getKey: () => 'default', maxAge: 60, swr: false },
-)
+let catalogGeneration = 0
+
+const cachedCatalog = defineCachedFunction(async (event: H3Event, generation: number) => {
+  const db = identityDb(event)
+  const rows = await db.select(controlFields).from(controls)
+    .where(and(eq(controls.active, true), eq(controls.isDraft, false)))
+    .orderBy(asc(controls.name), asc(controls.id)).all()
+  return { controls: await attachBrands(db, rows), brands: await listBrands(event) }
+}, {
+  name: 'public-catalog-v2', maxAge: 60, swr: false,
+  getKey: (_event, generation) => String(generation),
+})
+
+export async function publicCatalogBrands(event: H3Event) {
+  return (await cachedCatalog(event, catalogGeneration)).brands
+}
+
+export async function rebuildPublicCatalog(event: H3Event) {
+  catalogGeneration++
+  await cachedCatalog(event, catalogGeneration)
+}
 
 export async function listControls(event: H3Event, publicOnly: boolean) {
   const query = await getValidatedQuery(event, listQuery.parse)
-  if (publicOnly && query.page === 1 && query.pageSize === defaultPageSize && query.track !== '1'
-    && !query.q && !query.name && !query.brand && !query.brandId && !query.model && !query.vipoCode) {
-    return firstCatalogPage(event)
-  }
+  if (!publicOnly) return queryControls(event, false, query)
 
-  return queryControls(event, publicOnly, query)
+  const { controls: all, brands: allBrands } = await cachedCatalog(event, catalogGeneration)
+  const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim()
+  const containsText = (value: string, term?: string) => !term || normalize(value).includes(normalize(term))
+  const words = normalize(query.q ?? '').split(' ').filter(Boolean)
+  const items = all.filter(item => {
+    const text = [item.name, item.vipoCode, item.originalRemoteCode ?? '', item.notes ?? '',
+      item.category === 'tv' ? 'tv televisão' : item.category === 'ac' ? 'ac ar condicionado ar-condicionado' : 'receptor',
+      ...item.brands.map(brand => brand.name), ...item.models].join(' ')
+    return words.every(word => containsText(text, word))
+      && containsText(item.name, query.name)
+      && (!query.vipoCode || item.vipoCode.toUpperCase() === query.vipoCode.toUpperCase())
+      && (!query.brand || item.brands.some(brand => containsText(brand.name, query.brand)))
+      && (!query.brandId || item.brands.some(brand => brand.id === query.brandId))
+      && (!query.model || item.models.some(model => containsText(model, query.model)))
+  })
+  const selectedBrand = allBrands.find(brand => brand.id === query.brandId)?.name
+  const label = query.q?.trim() || [query.name, query.brand || selectedBrand, query.model, query.vipoCode].filter(Boolean).join(' ')
+  if (query.track === '1' && query.page === 1 && label) {
+    await recordCachedSearch(identityDb(event), label, items.map(item => item.id))
+  }
+  const start = (query.page - 1) * query.pageSize
+  return { items: items.slice(start, start + query.pageSize), total: items.length, page: query.page, pageSize: query.pageSize }
+}
+
+async function recordCachedSearch(db: Db, label: string, ids: string[]) {
+  await db.transaction(async tx => {
+    const term = await tx.insert(searchTerms).values({
+      term: label, normalizedTerm: label.toLowerCase().replace(/\s+/g, ' '),
+      zeroResultCount: ids.length ? 0 : 1,
+    }).onConflictDoUpdate({
+      target: searchTerms.normalizedTerm,
+      set: { searchCount: sql`${searchTerms.searchCount} + 1`,
+        zeroResultCount: sql`${searchTerms.zeroResultCount} + ${ids.length ? 0 : 1}`,
+        lastSearchedAt: sql`CURRENT_TIMESTAMP` },
+    }).returning({ id: searchTerms.id }).get()
+    for (const id of ids) {
+      await tx.run(sql`
+        INSERT INTO remote_search_terms (remote_control_id, search_term_id, search_count)
+        SELECT ${id}, ${term!.id}, 1 WHERE EXISTS (SELECT 1 FROM remote_controls WHERE id = ${id})
+        ON CONFLICT (remote_control_id, search_term_id)
+        DO UPDATE SET search_count = remote_search_terms.search_count + 1
+      `)
+    }
+  })
 }
 
 async function queryControls(event: H3Event, publicOnly: boolean, query: ListQuery) {

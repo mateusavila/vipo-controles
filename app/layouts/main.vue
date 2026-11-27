@@ -12,7 +12,13 @@ useHead({
 </script>
 
 <template>
-  <main class="w-full bg-slate-50 font-open">
+  <div class="w-full bg-slate-50 font-open">
     <slot />
-  </main>
+  </div>
 </template>
+
+<style>
+body {
+  overflow-x: hidden;
+}
+</style>

@@ -95,3 +95,11 @@ permanecem utilizáveis até que a senha seja salva. Ao salvar, os links pendent
 da conta são invalidados e as sessões anteriores perdem acesso ao painel.
 O webhook recebe o token em texto para montar o e-mail. Restrinja o acesso ao
 histórico de execuções no n8n ou desative o armazenamento dessas execuções.
+
+## Cache do catálogo e carrossel
+
+A API pública carrega os controles ativos e suas marcas em um snapshot no cache padrão do Nitro por 60 segundos. Busca, filtros e paginação são aplicados nesse snapshot. O registro de estatísticas ainda faz escritas no Turso quando uma busca é confirmada. Fotos continuam sendo servidas pela rota de imagens.
+
+Após escritas administrativas em controles e marcas, o snapshot é reconstruído. Na Vercel, o cache padrão em memória é por instância. Outras instâncias podem refletir alterações em até 60 segundos e cold starts recarregam o catálogo. Para invalidação imediata entre instâncias, é necessário armazenamento de cache compartilhado.
+
+O carrossel mantém uma fila independente, em lotes de seis controles, e antecipa o próximo lote ao se aproximar do fim. A grade conserva a paginação existente.
