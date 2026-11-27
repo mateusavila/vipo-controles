@@ -84,8 +84,12 @@ watch(file, image => {
 })
 
 function fillFromFilename(filename: string) {
+  const match = /^(.+?)\s+(\d+)(?:\s+(ar|re))?\.png$/i.exec(filename.trim())
+  if (match) {
+    const suffix = match[3]?.toLowerCase()
+    form.category = suffix === 'ar' ? 'ac' : suffix === 're' ? 'receptor' : 'tv'
+  }
 
-  const match = /^(.+?)\s+(\d+)\.png$/i.exec(filename.trim())
   const code = match?.[2] ?? ''
   if (!form.vipoCode.trim() || form.vipoCode === suggestedCode) {
     form.vipoCode = code
@@ -357,7 +361,7 @@ async function deleteSelected() {
                 <UFileUpload v-model="file" :disabled="uploadingDraft || analysisBusy" accept="image/jpeg,image/png,image/webp,image/avif"
                   :label="photoUrl ? 'Escolher nova foto' : 'Escolher foto'"
                   description="PNG até 3 MiB, convertido em WebP. JPG, WebP ou AVIF até 750 KiB." layout="grid" class="w-full"
-                  :ui="{ base: photoUrl && !removePhoto && !file ? '' : 'aspect-[3/4]', fileLeadingAvatar: '[&_img]:object-contain' }" />
+                  :ui="{ base: photoUrl && !removePhoto && !file ? '' : 'aspect-[3/4] max-h-[calc(100dvh-250px)]', fileLeadingAvatar: '[&_img]:object-contain' }" />
               </UFormField>
 
             </div>

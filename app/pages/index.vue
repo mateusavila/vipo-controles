@@ -74,11 +74,15 @@ function clearEmptySearch(value: string) {
         <BigSearch v-model="search" @update:model-value="clearEmptySearch" />
       </form>
       <div class="mx-auto max-w-200">
-        <BrandFilters v-if="brands" :model-value="brandId" :brands="brands" @update:model-value="selectBrand" />
-        <div v-else-if="brandsError" class="mt-4 flex items-center justify-center gap-2 text-sm">
-          <span>Não foi possível carregar as marcas.</span>
-          <UButton type="button" size="xs" variant="ghost" @click="() => refreshBrands()">Tentar novamente</UButton>
-        </div>
+        <template v-if="brands">
+          <BrandFilters :model-value="brandId" :brands="brands" @update:model-value="selectBrand" />
+        </template>
+        <template>
+          <div class="mt-4 flex items-center justify-center gap-2 text-sm">
+            <span>Não foi possível carregar as marcas.</span>
+            <UButton type="button" size="xs" variant="ghost" @click="() => refreshBrands()">Tentar novamente</UButton>
+          </div>
+        </template>
       </div>
 
       <section aria-label="Resultados da busca" :aria-busy="pending">
