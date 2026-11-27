@@ -7,8 +7,16 @@ useSeoMeta({
 })
 
 const search = ref('')
-const template = ref('grid')
-const carouselOpened = ref(false)
+type CatalogTemplate = 'grid' | 'carousel'
+
+const template = useCookie<CatalogTemplate>('catalog-template', {
+  default: () => 'grid',
+  maxAge: 60 * 60 * 24 * 365, // 1 ano
+  sameSite: 'lax',
+  path: '/',
+})
+
+const carouselOpened = ref(template.value === 'carousel')
 const appliedSearch = ref('')
 const brandId = ref<string>()
 const page = ref(1)

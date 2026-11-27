@@ -17,7 +17,7 @@
     "@nuxt/ui": "4.13.1",
     "drizzle-orm": "^0.45.4",
     "h3": "^1.15.11",
-    "nuxt": "4.6.4",
+    "nuxt": "^4",
     "nuxt-auth-utils": "^0.5.34",
     "sanitize-html": "^2.18.2",
     "sharp": "0.35.5",
@@ -27,7 +27,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.159",
+    "@iconify-json/lucide": "^1.2.160",
     "@nuxtjs/critters": "^0.10.1",
     "@types/bun": "^1.4.5",
     "@types/sanitize-html": "^2.16.2",

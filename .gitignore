@@ -4,3 +4,5 @@ node_modules/
 acesso-evania.txt
 .data/kv/
 .DS_Store
+.output/
+.venv/

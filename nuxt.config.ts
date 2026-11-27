@@ -25,8 +25,17 @@ export default defineNuxtConfig({
     }
   },
   routeRules: {
-    '/confirmar-email': { headers: { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } },
-    '/api/identity/password-token': { headers: { 'cache-control': 'no-store' } },
+    '/confirmar-email': {
+      headers: {
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer'
+      }
+    },
+    '/api/identity/password-token': {
+      headers: {
+        'cache-control': 'no-store'
+      }
+    },
   },
   app: {
     head: {
